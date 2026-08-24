@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+coverage/
+.vite/
+.next/
+*.tsbuildinfo
+
+*.ps1
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.seed
+
+# Logs & OS/editor cruft
+*.log
+.DS_Store
+Thumbs.db
+*.local
+*.tmp
+.vscode/
+.idea/
+
+# Local assistant / tooling config (not for public)
+.claude/
+CLAUDE.md
+
+# Internal planning, prompts & notes (not for public)
+docs/prompts/
+docs/hackathon/
+*.plan.md
+
+# Data volumes
+docker-data/
+postgres-data/
+
+# Foundry / contracts artifacts
+contracts/cache/
+contracts/out/
+contracts/broadcast/
