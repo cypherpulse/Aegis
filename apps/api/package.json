@@ -12,10 +12,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@aegis/blockchain": "workspace:*",
     "@aegis/database": "workspace:*",
     "@aegis/incident-engine": "workspace:*",
     "@aegis/shared": "workspace:*",
     "@aegis/simulator": "workspace:*",
+    "@fastify/cookie": "^11.0.0",
     "@fastify/cors": "^11.0.0",
     "@fastify/helmet": "^13.0.0",
     "@fastify/swagger": "^9.0.0",
@@ -26,6 +28,7 @@
   "devDependencies": {
     "tsx": "^4.19.0",
     "typescript": "^5.8.0",
+    "viem": "^2.21.0",
     "vitest": "^3.2.0"
   }
 }

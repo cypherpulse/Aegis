@@ -1,7 +1,9 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { AgentEvent } from "@aegis/shared";
+import type { AgentEvent, InvestigationFinding } from "@aegis/shared";
 import { SimulatorProvider, type BlockchainProvider } from "@aegis/blockchain";
 import { createToolRegistry } from "@aegis/mcp";
+import { SubprocessSandbox } from "@aegis/sandbox";
 import { getHeroIncident } from "@aegis/simulator";
 import {
   ApprovalController,
@@ -12,10 +14,15 @@ import {
 import {
   runApplicationInvestigator,
   runBlockchainInvestigator,
+  runCodeInvestigator,
   runCommander,
   runTreasuryInvestigator,
   type InvestigationContext,
 } from "../src/index.js";
+
+const FIXTURE_ROOT = fileURLToPath(
+  new URL("../../../fixtures/demo-app", import.meta.url),
+);
 
 async function makeCtx(provider: BlockchainProvider = new SimulatorProvider()) {
   const events: AgentEvent[] = [];
@@ -86,6 +93,90 @@ describe("Application Investigator", () => {
     expect(
       finding.evidence.some((e) => e.type === "alert"),
     ).toBe(true);
+  });
+});
+
+describe("Treasury Investigator — approval boundary", () => {
+  it("blocks the sensitive tool on denial but still produces a finding", async () => {
+    const { ctx, events } = await makeCtx();
+    // A manual policy that rejects: the sensitive getTreasuryBalance is blocked.
+    ctx.approval = new ApprovalController(
+      { mode: "manual", timeoutMs: 1000, resolver: async () => false },
+      ctx.emit,
+    );
+    const finding = await runTreasuryInvestigator(ctx);
+    // The investigation continues on partial data — it does not crash.
+    expect(finding.status).toBe("SUCCESS");
+    expect(finding.metadata["balanceBlocked"]).toBe(true);
+    const types = events.map((e) => e.type);
+    expect(types).toContain("approval.requested");
+    expect(types).toContain("approval.denied");
+  });
+});
+
+describe("Code Investigator", () => {
+  it("discovers the code bug and validates it in the sandbox", async () => {
+    const { ctx, events } = await makeCtx();
+    ctx.toolCtx = { ...ctx.toolCtx, codeRoot: FIXTURE_ROOT };
+    ctx.sandbox = new SubprocessSandbox();
+
+    const prior: InvestigationFinding[] = [
+      {
+        investigator: "TREASURY",
+        status: "SUCCESS",
+        summary: "insufficient",
+        evidence: [
+          {
+            source: "treasury",
+            type: "balance",
+            reference: "0xT",
+            observation: "low",
+            timestamp: new Date().toISOString(),
+          },
+        ],
+        confidence: 0.96,
+        severity: "CRITICAL",
+        timestamp: new Date().toISOString(),
+        metadata: { sufficient: false },
+      },
+      {
+        investigator: "APPLICATION",
+        status: "SUCCESS",
+        summary: "retries",
+        evidence: [
+          {
+            source: "metrics",
+            type: "metric",
+            reference: "payout_retry_count",
+            observation: "27",
+            timestamp: new Date().toISOString(),
+          },
+        ],
+        confidence: 0.85,
+        severity: "HIGH",
+        timestamp: new Date().toISOString(),
+        metadata: { retries: 27 },
+      },
+    ];
+
+    const finding = await runCodeInvestigator(ctx, prior);
+    expect(finding.investigator).toBe("CODE");
+    expect(finding.status).toBe("SUCCESS");
+    expect(finding.metadata["drains"]).toBe(true);
+    expect(finding.evidence.some((e) => e.type === "source")).toBe(true);
+    expect(finding.evidence.some((e) => e.type === "analysis")).toBe(true);
+    const types = events.map((e) => e.type);
+    expect(types).toContain("code_investigator.started");
+    expect(types).toContain("sandbox.completed");
+    expect(types).toContain("code_investigator.completed");
+  }, 30000);
+
+  it("fails gracefully when the code root is missing", async () => {
+    // makeCtx's toolCtx has no codeRoot, so the code tools cannot run.
+    const { ctx } = await makeCtx();
+    ctx.sandbox = new SubprocessSandbox();
+    const finding = await runCodeInvestigator(ctx, []);
+    expect(finding.status).toBe("FAILED");
   });
 });
 

@@ -13,6 +13,6 @@ export async function runMigrations(db: Database): Promise<void> {
 /** Truncate every table (tests only). */
 export async function truncateAll(db: Database): Promise<void> {
   await db.execute(
-    sql`truncate table agent_events, root_causes, evidence, findings, investigator_runs, investigations, incidents restart identity cascade`,
+    sql`truncate table agent_events, root_causes, evidence, findings, investigator_runs, investigations, incidents, integration_keys, contracts, treasury_addresses, monitoring_configs, protocol_members, protocols, sessions, wallet_nonces, users restart identity cascade`,
   );
 }

@@ -1,7 +1,12 @@
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import swagger from "@fastify/swagger";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
+import { AppError } from "./auth.js";
+import { registerAuthRoutes } from "./routes/auth.js";
+import { registerProtocolRoutes } from "./routes/protocols.js";
+import { registerInvestigationRoutes } from "./routes/investigation.js";
 import {
   getAgentEvents,
   getIncident,
@@ -50,6 +55,7 @@ const listQuery = z.object({
   status: z.string().optional(),
   severity: z.string().optional(),
   chain: z.string().optional(),
+  protocol: z.string().optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
   offset: z.coerce.number().int().nonnegative().optional(),
 });
@@ -76,7 +82,11 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
   );
 
   await app.register(helmet, { contentSecurityPolicy: false });
-  await app.register(cors, { origin: opts.corsOrigins ?? true });
+  await app.register(cors, { origin: opts.corsOrigins ?? true, credentials: true });
+  await app.register(
+    cookie,
+    process.env.SESSION_SECRET ? { secret: process.env.SESSION_SECRET } : {},
+  );
   await app.register(swagger, {
     openapi: {
       info: { title: "Aegis API", version: "1.0.0" },
@@ -87,6 +97,10 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
 
   // Consistent, stack-free error envelope (§12/§32).
   app.setErrorHandler((error: FastifyError, req, reply) => {
+    if (error instanceof AppError) {
+      reply.code(error.statusCode).send(err(error.code, error.message));
+      return;
+    }
     if (error.validation || error.code === "FST_ERR_VALIDATION") {
       const fields: Record<string, string> = {};
       for (const issue of error.validation ?? []) {
@@ -163,7 +177,15 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
   app.get<{ Querystring: ListQuery }>(
     `${api}/incidents`,
     { schema: { querystring: listQuery } },
-    async (req) => ok(await listIncidents(db, req.query)),
+    async (req) => {
+      const { protocol, ...rest } = req.query;
+      return ok(
+        await listIncidents(db, {
+          ...rest,
+          ...(protocol ? { protocolId: protocol } : {}),
+        }),
+      );
+    },
   );
 
   app.get<{ Params: { id: string } }>(
@@ -328,6 +350,11 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
       reply.send(ok({ rootCause }));
     },
   );
+
+  // ---- Platform resources + auth + rich investigation views --------------
+  registerAuthRoutes(app, db);
+  registerProtocolRoutes(app, db);
+  registerInvestigationRoutes(app, db);
 
   await app.ready();
   return { app, publisher, jobs };

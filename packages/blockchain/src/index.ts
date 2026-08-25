@@ -5,6 +5,7 @@ import type { BlockchainProvider } from "./provider.js";
 export * from "./provider.js";
 export { SimulatorProvider } from "./simulator-provider.js";
 export { ViemProvider } from "./viem-provider.js";
+export { isValidAddress, verifyWalletSignature } from "./wallet.js";
 
 export interface ProviderOptions {
   /** Explicit RPC URL. Falls back to BASE_SEPOLIA_RPC_URL when omitted. */

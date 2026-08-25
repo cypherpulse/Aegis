@@ -39,9 +39,11 @@ export interface InvestigationRecord {
 export async function createIncident(
   db: Database,
   incident: Incident,
+  protocolId?: string,
 ): Promise<Incident> {
   await db.insert(incidents).values({
     id: incident.id,
+    protocolId: protocolId ?? null,
     type: incident.type,
     severity: incident.severity,
     title: incident.title,
@@ -83,6 +85,7 @@ export interface ListIncidentsFilter {
   status?: string | undefined;
   severity?: string | undefined;
   chain?: string | undefined;
+  protocolId?: string | undefined;
   limit?: number | undefined;
   offset?: number | undefined;
 }
@@ -96,6 +99,7 @@ export async function listIncidents(
   const conds = [];
   if (filter.status) conds.push(eq(incidents.status, filter.status));
   if (filter.severity) conds.push(eq(incidents.severity, filter.severity));
+  if (filter.protocolId) conds.push(eq(incidents.protocolId, filter.protocolId));
   if (filter.chain)
     conds.push(sql`${incidents.chain}->>'name' = ${filter.chain}`);
   const where = conds.length ? and(...conds) : undefined;

@@ -73,4 +73,31 @@ describe("DockerSandbox (real)", () => {
     expect(res.exitCode).toBe(0);
     expect(JSON.parse(res.stdout.trim())).toEqual({ ok: true });
   });
+
+  it.skipIf(!dockerReady)("denies network access", async () => {
+    const res = await new DockerSandbox().run({
+      code: `import net from "node:net";
+             const s = net.connect(80, "1.1.1.1");
+             s.on("connect", () => { console.log("NET_OK"); process.exit(0); });
+             s.on("error", () => { console.log("NET_BLOCKED"); process.exit(0); });
+             setTimeout(() => { console.log("NET_TIMEOUT"); process.exit(0); }, 3000);`,
+      timeoutMs: 8000,
+    });
+    expect(res.stdout).not.toContain("NET_OK");
+    expect(res.stdout).toMatch(/NET_BLOCKED|NET_TIMEOUT/);
+  });
+
+  it.skipIf(!dockerReady)(
+    "runs on a read-only root filesystem (no host writes)",
+    async () => {
+      const res = await new DockerSandbox().run({
+        code: `import { writeFileSync } from "node:fs";
+               try { writeFileSync("/etc/aegis-probe", "x"); console.log("WROTE"); }
+               catch { console.log("READONLY"); }`,
+        timeoutMs: 8000,
+      });
+      expect(res.stdout).not.toContain("WROTE");
+      expect(res.stdout).toContain("READONLY");
+    },
+  );
 });
