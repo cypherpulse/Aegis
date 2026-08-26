@@ -52,6 +52,23 @@ function googleConfig(): GoogleConfig | null {
   return { clientId, clientSecret, redirectUri };
 }
 
+/** Only allow returning to a localhost origin (dev) — prevents open redirects. */
+function safeOrigin(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1")
+    ) {
+      return url.origin;
+    }
+  } catch {
+    /* invalid */
+  }
+  return null;
+}
+
 export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
   const base = "/api/v1/auth";
 
@@ -102,9 +119,18 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
     },
   );
 
+  app.get(`${base}/config`, async (_req, reply) => {
+    reply.send(ok({ google: googleConfig() !== null }));
+  });
+
   app.get(`${base}/me`, async (req, reply) => {
-    const user = await currentUser(db, req);
-    reply.send(ok({ user: user ? userDto(user) : null }));
+    try {
+      const user = await currentUser(db, req);
+      reply.send(ok({ user: user ? userDto(user) : null }));
+    } catch {
+      // Auth resolution must never crash the app shell (e.g. transient DB outage).
+      reply.send(ok({ user: null }));
+    }
   });
 
   app.post(`${base}/logout`, async (req, reply) => {
@@ -115,7 +141,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
   });
 
   // ---- Google OAuth (real, config-gated) ----
-  app.get(`${base}/google`, async (_req, reply) => {
+  app.get<{ Querystring: { redirect?: string } }>(`${base}/google`, async (req, reply) => {
     const cfg = googleConfig();
     if (!cfg) {
       reply
@@ -123,7 +149,12 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
         .send(err("NOT_CONFIGURED", "Google OAuth is not configured on this server"));
       return;
     }
-    const state = randomBytes(12).toString("hex");
+    // Remember where to return the user (their web app's origin), CSRF nonce prefixed.
+    const origin = safeOrigin(req.query.redirect);
+    const nonce = randomBytes(8).toString("hex");
+    const state = origin
+      ? `${nonce}.${Buffer.from(origin).toString("base64url")}`
+      : nonce;
     const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     url.searchParams.set("client_id", cfg.clientId);
     url.searchParams.set("redirect_uri", cfg.redirectUri);
@@ -133,7 +164,7 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
     reply.redirect(url.toString());
   });
 
-  app.get<{ Querystring: { code?: string } }>(
+  app.get<{ Querystring: { code?: string; state?: string } }>(
     `${base}/google/callback`,
     async (req, reply) => {
       const cfg = googleConfig();
@@ -172,8 +203,20 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
         });
         const session = await createSession(db, user.id, SESSION_TTL_MS);
         setSessionCookie(reply, session.id);
-        const appBase = process.env.APP_BASE_URL;
-        if (appBase) reply.redirect(appBase);
+        // Return the user to the origin they started from (from state), else APP_BASE_URL.
+        let origin: string | null = null;
+        const state = req.query.state;
+        if (typeof state === "string" && state.includes(".")) {
+          try {
+            origin = safeOrigin(
+              Buffer.from(state.slice(state.indexOf(".") + 1), "base64url").toString(),
+            );
+          } catch {
+            origin = null;
+          }
+        }
+        const target = origin ? `${origin}/overview` : (process.env.APP_BASE_URL ?? null);
+        if (target) reply.redirect(target);
         else reply.send(ok({ user: userDto(user) }));
       } catch (e) {
         if (e instanceof AppError) throw e;

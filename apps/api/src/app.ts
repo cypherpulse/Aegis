@@ -2,14 +2,20 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import swagger from "@fastify/swagger";
-import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
-import { AppError } from "./auth.js";
+import Fastify, {
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyRequest,
+} from "fastify";
+import { AppError, authRequired, currentUser } from "./auth.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerProtocolRoutes } from "./routes/protocols.js";
 import { registerInvestigationRoutes } from "./routes/investigation.js";
+import { registerAssistantRoutes } from "./routes/assistant.js";
 import {
   getAgentEvents,
   getIncident,
+  getIncidentOwner,
   getActiveInvestigation,
   getInvestigation,
   getLatestInvestigation,
@@ -18,6 +24,7 @@ import {
   createInvestigation,
   listFindings,
   listIncidents,
+  listUserProtocolIds,
   pingDb,
   type DbHandle,
   type StoredEvent,
@@ -80,6 +87,24 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
   const jobs = new InvestigationJobRunner(db, publisher, (e) =>
     app.log.error({ err: e }, "investigation job failed"),
   );
+
+  // Access control for a single incident: public demo incidents (no owner) are
+  // world-readable so the landing demo works; owned incidents are restricted to
+  // their creator / protocol members. Demo mode (auth off) is fully open.
+  const canViewIncident = async (
+    req: FastifyRequest,
+    owner: { protocolId: string | null; createdByUserId: string | null },
+  ): Promise<boolean> => {
+    if (!authRequired()) return true;
+    if (!owner.createdByUserId && !owner.protocolId) return true; // public pool
+    const actor = await currentUser(db, req);
+    if (!actor) return false;
+    if (owner.createdByUserId === actor.id) return true;
+    if (owner.protocolId) {
+      return (await listUserProtocolIds(db, actor.id)).includes(owner.protocolId);
+    }
+    return false;
+  };
 
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(cors, { origin: opts.corsOrigins ?? true, credentials: true });
@@ -159,7 +184,10 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
     { schema: { body: CreateIncidentSchema } },
     async (req, reply) => {
       const incident = buildIncident(req.body);
-      await createIncident(db, incident);
+      // Attribute demo incidents to the signed-in user (if any) so they stay in
+      // that user's scope; anonymous demo incidents have no owner (public pool).
+      const actor = await currentUser(db, req);
+      await createIncident(db, incident, null, actor?.id ?? null);
       const investigation = await createInvestigation(db, {
         incidentId: incident.id,
       });
@@ -179,9 +207,22 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
     { schema: { querystring: listQuery } },
     async (req) => {
       const { protocol, ...rest } = req.query;
+      // Per-user isolation (§ real-auth). In demo mode (AUTH_REQUIRED off) the
+      // list is shared. With auth on: signed-in users see their own incidents +
+      // their protocols'; anonymous visitors see only the public demo pool.
+      let scope: Record<string, unknown> = {};
+      if (authRequired()) {
+        const actor = await currentUser(db, req);
+        if (actor) {
+          scope = { ownerUserId: actor.id, ownerProtocolIds: await listUserProtocolIds(db, actor.id) };
+        } else {
+          scope = { publicOnly: true };
+        }
+      }
       return ok(
         await listIncidents(db, {
           ...rest,
+          ...scope,
           ...(protocol ? { protocolId: protocol } : {}),
         }),
       );
@@ -192,11 +233,12 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
     `${api}/incidents/:id`,
     { schema: { params: idParam } },
     async (req, reply) => {
-      const incident = await getIncident(db, req.params.id);
-      if (!incident) {
+      const owner = await getIncidentOwner(db, req.params.id);
+      if (!owner || !(await canViewIncident(req, owner))) {
         reply.code(404).send(err("NOT_FOUND", "Incident not found"));
         return;
       }
+      const incident = (await getIncident(db, req.params.id))!;
       const investigation = await getLatestInvestigation(db, incident.id);
       const findings = investigation
         ? await listFindings(db, investigation.id)
@@ -220,11 +262,12 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
     `${api}/incidents/:id/investigate`,
     { schema: { params: idParam } },
     async (req, reply) => {
-      const incident = await getIncident(db, req.params.id);
-      if (!incident) {
+      const owner = await getIncidentOwner(db, req.params.id);
+      if (!owner || !(await canViewIncident(req, owner))) {
         reply.code(404).send(err("NOT_FOUND", "Incident not found"));
         return;
       }
+      const incident = (await getIncident(db, req.params.id))!;
       // Idempotent: return the existing active investigation if present (§28).
       const existing = await getActiveInvestigation(db, incident.id);
       if (existing) {
@@ -244,7 +287,12 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
   app.get<{ Params: { id: string }; Querystring: EventsQuery }>(
     `${api}/incidents/:id/events`,
     { schema: { params: idParam, querystring: eventsQuery } },
-    async (req) => {
+    async (req, reply) => {
+      const owner = await getIncidentOwner(db, req.params.id);
+      if (!owner || !(await canViewIncident(req, owner))) {
+        reply.code(404).send(err("NOT_FOUND", "Incident not found"));
+        return;
+      }
       const events = await getAgentEvents(db, req.params.id, {
         ...(req.query.afterSeq !== undefined
           ? { afterSeq: req.query.afterSeq }
@@ -262,8 +310,8 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
     `${api}/incidents/:id/events/stream`,
     async (req, reply) => {
       const incidentId = req.params.id;
-      const incident = await getIncident(db, incidentId);
-      if (!incident) {
+      const owner = await getIncidentOwner(db, incidentId);
+      if (!owner || !(await canViewIncident(req, owner))) {
         reply.code(404).send(err("NOT_FOUND", "Incident not found"));
         return;
       }
@@ -353,8 +401,9 @@ export async function buildApp(opts: BuildAppOptions): Promise<BuiltApp> {
 
   // ---- Platform resources + auth + rich investigation views --------------
   registerAuthRoutes(app, db);
-  registerProtocolRoutes(app, db);
+  registerProtocolRoutes(app, db, jobs);
   registerInvestigationRoutes(app, db);
+  registerAssistantRoutes(app, db, jobs);
 
   await app.ready();
   return { app, publisher, jobs };

@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   genId,
   nowIso,
@@ -39,11 +39,13 @@ export interface InvestigationRecord {
 export async function createIncident(
   db: Database,
   incident: Incident,
-  protocolId?: string,
+  protocolId?: string | null,
+  createdByUserId?: string | null,
 ): Promise<Incident> {
   await db.insert(incidents).values({
     id: incident.id,
     protocolId: protocolId ?? null,
+    createdByUserId: createdByUserId ?? null,
     type: incident.type,
     severity: incident.severity,
     title: incident.title,
@@ -81,11 +83,31 @@ export async function getIncident(
   return r ? rowToIncident(r) : null;
 }
 
+/** Ownership fields for access control (null row = incident not found). */
+export async function getIncidentOwner(
+  db: Database,
+  id: string,
+): Promise<{ protocolId: string | null; createdByUserId: string | null } | null> {
+  const rows = await db
+    .select({ protocolId: incidents.protocolId, createdByUserId: incidents.createdByUserId })
+    .from(incidents)
+    .where(eq(incidents.id, id));
+  return rows[0] ?? null;
+}
+
 export interface ListIncidentsFilter {
   status?: string | undefined;
   severity?: string | undefined;
   chain?: string | undefined;
   protocolId?: string | undefined;
+  /**
+   * Owner scope: return incidents the user created OR that belong to one of
+   * their protocols. Used to isolate data per logged-in user.
+   */
+  ownerUserId?: string | undefined;
+  ownerProtocolIds?: string[] | undefined;
+  /** Public demo pool only: incidents with no owner and no protocol. */
+  publicOnly?: boolean | undefined;
   limit?: number | undefined;
   offset?: number | undefined;
 }
@@ -102,6 +124,16 @@ export async function listIncidents(
   if (filter.protocolId) conds.push(eq(incidents.protocolId, filter.protocolId));
   if (filter.chain)
     conds.push(sql`${incidents.chain}->>'name' = ${filter.chain}`);
+  // Per-user isolation: the user's own incidents plus those of their protocols.
+  if (filter.ownerUserId) {
+    const ownerConds = [eq(incidents.createdByUserId, filter.ownerUserId)];
+    if (filter.ownerProtocolIds && filter.ownerProtocolIds.length > 0) {
+      ownerConds.push(inArray(incidents.protocolId, filter.ownerProtocolIds));
+    }
+    conds.push(or(...ownerConds)!);
+  } else if (filter.publicOnly) {
+    conds.push(and(isNull(incidents.createdByUserId), isNull(incidents.protocolId))!);
+  }
   const where = conds.length ? and(...conds) : undefined;
 
   const rows = await db

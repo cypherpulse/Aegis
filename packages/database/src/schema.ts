@@ -20,6 +20,8 @@ export const incidents = pgTable(
     id: text("id").primaryKey(),
     // Nullable: protocol-scoped ingestion links an incident to a protocol.
     protocolId: text("protocol_id"),
+    // Nullable: the user who created/owns this incident (null = public demo).
+    createdByUserId: text("created_by_user_id"),
     type: text("type").notNull(),
     severity: text("severity").notNull(),
     title: text("title").notNull(),
@@ -35,6 +37,7 @@ export const incidents = pgTable(
   (t) => [
     index("incidents_protocol_idx").on(t.protocolId),
     index("incidents_status_idx").on(t.status),
+    index("incidents_created_by_idx").on(t.createdByUserId),
   ],
 );
 
@@ -192,12 +195,15 @@ export const protocols = pgTable(
     website: text("website"),
     primaryChain: text("primary_chain"),
     githubRepository: text("github_repository"),
+    status: text("status").notNull().default("ACTIVE"),
+    archivedAt: ts("archived_at"),
     createdAt: ts("created_at").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex("protocols_slug_uq").on(t.slug),
     index("protocols_owner_idx").on(t.ownerUserId),
+    index("protocols_status_idx").on(t.status),
   ],
 );
 

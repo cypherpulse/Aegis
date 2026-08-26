@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, like, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, like, or, sql } from "drizzle-orm";
 import { genId, nowIso } from "@aegis/shared";
 import type { Database } from "./client.js";
 import {
@@ -15,6 +15,7 @@ import {
   findings as findingsTable,
   evidence as evidenceTable,
   investigatorRuns,
+  incidents,
 } from "./schema.js";
 
 // ---- Records ------------------------------------------------------------
@@ -198,7 +199,7 @@ export async function slugExists(db: Database, slug: string): Promise<boolean> {
 export async function listProtocolsForUser(
   db: Database,
   userId: string,
-  opts: { limit?: number; offset?: number } = {},
+  opts: { limit?: number; offset?: number; includeArchived?: boolean } = {},
 ): Promise<{ items: ProtocolRecord[]; total: number; limit: number; offset: number }> {
   const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
   const offset = Math.max(opts.offset ?? 0, 0);
@@ -206,18 +207,30 @@ export async function listProtocolsForUser(
     .select({ protocolId: protocolMembers.protocolId })
     .from(protocolMembers)
     .where(eq(protocolMembers.userId, userId));
+  const scope = opts.includeArchived
+    ? inArray(protocols.id, memberProtocolIds)
+    : and(inArray(protocols.id, memberProtocolIds), eq(protocols.status, "ACTIVE"));
   const items = await db
     .select()
     .from(protocols)
-    .where(inArray(protocols.id, memberProtocolIds))
+    .where(scope)
     .orderBy(desc(protocols.createdAt))
     .limit(limit)
     .offset(offset);
   const counted = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(protocols)
-    .where(inArray(protocols.id, memberProtocolIds));
+    .where(scope);
   return { items, total: counted[0]?.n ?? 0, limit, offset };
+}
+
+/** All protocol ids the user is a member of (active + archived), for scoping. */
+export async function listUserProtocolIds(db: Database, userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ protocolId: protocolMembers.protocolId })
+    .from(protocolMembers)
+    .where(eq(protocolMembers.userId, userId));
+  return rows.map((r) => r.protocolId);
 }
 
 export async function getProtocol(db: Database, id: string): Promise<ProtocolRecord | null> {
@@ -250,8 +263,30 @@ export async function updateProtocol(
   return rows[0] ?? null;
 }
 
+/** Soft-archive: hides the protocol and pauses its monitoring, keeps history. */
+export async function archiveProtocol(db: Database, id: string): Promise<ProtocolRecord | null> {
+  const rows = await db
+    .update(protocols)
+    .set({ status: "ARCHIVED", archivedAt: nowIso(), updatedAt: nowIso() })
+    .where(eq(protocols.id, id))
+    .returning();
+  return rows[0] ?? null;
+}
+
+export async function unarchiveProtocol(db: Database, id: string): Promise<ProtocolRecord | null> {
+  const rows = await db
+    .update(protocols)
+    .set({ status: "ACTIVE", archivedAt: null, updatedAt: nowIso() })
+    .where(eq(protocols.id, id))
+    .returning();
+  return rows[0] ?? null;
+}
+
+/** Permanent delete: removes the protocol + config; its incidents are kept as
+ * owner-scoped history (protocol link cleared so they don't leak as public). */
 export async function deleteProtocol(db: Database, id: string): Promise<void> {
   await db.transaction(async (tx) => {
+    await tx.update(incidents).set({ protocolId: null }).where(eq(incidents.protocolId, id));
     await tx.delete(integrationKeys).where(eq(integrationKeys.protocolId, id));
     await tx.delete(contracts).where(eq(contracts.protocolId, id));
     await tx.delete(treasuryAddresses).where(eq(treasuryAddresses.protocolId, id));
@@ -368,6 +403,30 @@ export async function getMonitoring(db: Database, protocolId: string): Promise<M
   if (rows[0]) return rows[0];
   const created = await db.insert(monitoringConfigs).values({ protocolId }).onConflictDoNothing().returning();
   return created[0] ?? rows[0]!;
+}
+
+/** Active (non-archived) protocols with any monitoring flag enabled. */
+export async function listMonitoredProtocols(
+  db: Database,
+): Promise<MonitoringRecord[]> {
+  const activeIds = db
+    .select({ id: protocols.id })
+    .from(protocols)
+    .where(eq(protocols.status, "ACTIVE"));
+  const rows = await db
+    .select()
+    .from(monitoringConfigs)
+    .where(
+      and(
+        inArray(monitoringConfigs.protocolId, activeIds),
+        or(
+          eq(monitoringConfigs.contractMonitoring, true),
+          eq(monitoringConfigs.treasuryMonitoring, true),
+          eq(monitoringConfigs.applicationMonitoring, true),
+        ),
+      ),
+    );
+  return rows;
 }
 
 export async function updateMonitoring(

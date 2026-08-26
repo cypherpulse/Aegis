@@ -113,6 +113,29 @@ export function successFinding(params: {
   };
 }
 
+/**
+ * A successful-but-empty finding: the investigator ran but had nothing to
+ * analyze (e.g. no EVM address on a non-EVM chain, or no code repository). It
+ * carries a coverage note as evidence and low confidence, so the investigation
+ * stays COMPLETE instead of being dragged to PARTIAL by a hard failure.
+ */
+export function noDataFinding(
+  investigator: InvestigatorKind,
+  source: string,
+  reason: string,
+): InvestigationFinding {
+  return {
+    investigator,
+    status: "SUCCESS",
+    summary: reason,
+    evidence: [evidence(source, "coverage", investigator.toLowerCase(), reason)],
+    confidence: 0.1,
+    severity: "LOW",
+    timestamp: nowIso(),
+    metadata: { noData: true },
+  };
+}
+
 export function failedFinding(
   investigator: InvestigatorKind,
   message: string,

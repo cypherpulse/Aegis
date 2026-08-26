@@ -17,6 +17,7 @@
     "@aegis/incident-engine": "workspace:*",
     "@aegis/shared": "workspace:*",
     "@aegis/simulator": "workspace:*",
+    "@aegis/trueforge": "workspace:*",
     "@fastify/cookie": "^11.0.0",
     "@fastify/cors": "^11.0.0",
     "@fastify/helmet": "^13.0.0",

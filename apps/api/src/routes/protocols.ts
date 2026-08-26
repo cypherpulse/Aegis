@@ -1,14 +1,17 @@
-import { isValidAddress } from "@aegis/blockchain";
+import { isValidAddressForChain, resolveChain } from "@aegis/blockchain";
 import {
+  archiveProtocol,
   createContract,
   createIncident,
   createIntegrationKey,
+  createInvestigation,
   createProtocol,
   createTreasury,
   deleteContract,
   deleteProtocol,
   deleteTreasury,
   getContract,
+  unarchiveProtocol,
   getIntegrationKeyByPrefix,
   getMonitoring,
   getTreasury,
@@ -34,6 +37,8 @@ import {
 import { err, genId, nowIso, ok, type Incident } from "@aegis/shared";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
+
+import type { InvestigationJobRunner } from "../jobs.js";
 
 import {
   AppError,
@@ -63,6 +68,8 @@ const protocolDto = (p: ProtocolRecord) => ({
   website: p.website,
   primaryChain: p.primaryChain,
   githubRepository: p.githubRepository,
+  status: p.status,
+  archivedAt: p.archivedAt,
   createdAt: p.createdAt,
   updatedAt: p.updatedAt,
 });
@@ -168,7 +175,11 @@ async function authenticateIngestion(
   await requireProtocolAccess(db, req, protocolId);
 }
 
-export function registerProtocolRoutes(app: FastifyInstance, db: Database): void {
+export function registerProtocolRoutes(
+  app: FastifyInstance,
+  db: Database,
+  jobs: InvestigationJobRunner,
+): void {
   const base = "/api/v1/protocols";
 
   // ---- Protocols ----
@@ -239,6 +250,19 @@ export function registerProtocolRoutes(app: FastifyInstance, db: Database): void
     },
   );
 
+  // Soft-archive (pauses monitoring, keeps history) vs permanent delete.
+  app.post<{ Params: { id: string } }>(`${base}/:id/archive`, async (req, reply) => {
+    await requireProtocolAccess(db, req, req.params.id);
+    const updated = await archiveProtocol(db, req.params.id);
+    reply.send(ok(updated ? protocolDto(updated) : null));
+  });
+
+  app.post<{ Params: { id: string } }>(`${base}/:id/unarchive`, async (req, reply) => {
+    await requireProtocolAccess(db, req, req.params.id);
+    const updated = await unarchiveProtocol(db, req.params.id);
+    reply.send(ok(updated ? protocolDto(updated) : null));
+  });
+
   app.delete<{ Params: { id: string } }>(`${base}/:id`, async (req, reply) => {
     await requireProtocolAccess(db, req, req.params.id);
     await deleteProtocol(db, req.params.id);
@@ -252,7 +276,7 @@ export function registerProtocolRoutes(app: FastifyInstance, db: Database): void
     async (req, reply) => {
       await requireProtocolAccess(db, req, req.params.id);
       const body = req.body as z.infer<typeof CreateContract>;
-      if (!isValidAddress(body.address)) {
+      if (!isValidAddressForChain(body.chain, body.address)) {
         reply.code(422).send(err("VALIDATION", "Invalid contract address", { address: "invalid" }));
         return;
       }
@@ -277,6 +301,44 @@ export function registerProtocolRoutes(app: FastifyInstance, db: Database): void
         return;
       }
       reply.send(ok(contractDto(c)));
+    },
+  );
+
+  // Launch a real agent investigation for a specific contract. Lets a user
+  // kick off the multi-agent pipeline on a contract they just added.
+  app.post<{ Params: { id: string; contractId: string } }>(
+    `${base}/:id/contracts/:contractId/investigate`,
+    async (req, reply) => {
+      const { user } = await requireProtocolAccess(db, req, req.params.id);
+      const c = await getContract(db, req.params.contractId);
+      if (!c || c.protocolId !== req.params.id) {
+        reply.code(404).send(err("NOT_FOUND", "Contract not found"));
+        return;
+      }
+      const chain = resolveChain(c.chain);
+      const incident: Incident = {
+        id: genId("INC"),
+        type: "TREASURY_GAS_DEPLETION",
+        severity: "HIGH",
+        title: `Investigate contract ${c.name}`,
+        description: `Manual investigation requested for ${c.name} (${c.address}) on ${c.chain}.`,
+        affectedProtocol: req.params.id,
+        chain: { name: c.chain, chainId: chain?.chainId ?? CHAIN_IDS[c.chain] ?? 0 },
+        detectedAt: nowIso(),
+        status: "DETECTED",
+        metadata: {
+          source: "contract_investigate",
+          contractId: c.id,
+          contractAddress: c.address,
+          chain: c.chain,
+        },
+      };
+      await createIncident(db, incident, req.params.id, user.id);
+      const investigation = await createInvestigation(db, { incidentId: incident.id });
+      jobs.enqueue(incident, investigation.id);
+      reply.code(202).send(
+        ok({ incidentId: incident.id, investigationId: investigation.id, status: "QUEUED" }),
+      );
     },
   );
 
@@ -325,7 +387,7 @@ export function registerProtocolRoutes(app: FastifyInstance, db: Database): void
     async (req, reply) => {
       await requireProtocolAccess(db, req, req.params.id);
       const body = req.body as z.infer<typeof CreateTreasury>;
-      if (!isValidAddress(body.address)) {
+      if (!isValidAddressForChain(body.chain, body.address)) {
         reply.code(422).send(err("VALIDATION", "Invalid treasury address", { address: "invalid" }));
         return;
       }

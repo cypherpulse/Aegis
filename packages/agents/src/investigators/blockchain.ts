@@ -2,6 +2,7 @@ import { makeEvent, type Evidence, type InvestigationFinding } from "@aegis/shar
 import { callTool } from "@aegis/mcp";
 import {
   evidence,
+  noDataFinding,
   output,
   weiToEth,
   successFinding,
@@ -13,11 +14,32 @@ import type { InvestigationContext } from "../context.js";
 import { runInvestigator } from "../run-investigator.js";
 import { BLOCKCHAIN_SPEC } from "../specs.js";
 
+const EVM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
+
 export function runBlockchainInvestigator(
   ctx: InvestigationContext,
 ): Promise<InvestigationFinding> {
-  const treasury = String(ctx.incident.metadata["treasuryAddress"] ?? "");
+  const treasury = String(
+    ctx.incident.metadata["treasuryAddress"] ??
+      ctx.incident.metadata["contractAddress"] ??
+      ctx.incident.metadata["address"] ??
+      "",
+  );
   const providerName = ctx.toolCtx.provider.name;
+
+  // The on-chain tools read EVM state. When the incident carries no EVM address
+  // (e.g. a non-EVM chain like Solana/Stacks, or an alert with no address), skip
+  // the on-chain plan and return a graceful low-confidence finding rather than
+  // failing the whole investigation on invalid tool input.
+  if (!EVM_ADDRESS.test(treasury)) {
+    return Promise.resolve(
+      noDataFinding(
+        "BLOCKCHAIN",
+        providerName,
+        `No EVM address available for on-chain analysis on ${ctx.incident.chain.name}.`,
+      ),
+    );
+  }
 
   return runInvestigator({
     ctx,

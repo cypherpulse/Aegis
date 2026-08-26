@@ -5,7 +5,7 @@ import {
   type InvestigationFinding,
 } from "@aegis/shared";
 import { callTool } from "@aegis/mcp";
-import { evidence, failedFinding, successFinding } from "../analysis.js";
+import { evidence, noDataFinding, successFinding } from "../analysis.js";
 import type { InvestigationContext } from "../context.js";
 import { CODE_SPEC } from "../specs.js";
 
@@ -176,7 +176,10 @@ export async function runCodeInvestigator(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    emitEvent(ctx, "code_investigator.failed", { error: message });
-    return failedFinding("CODE", message);
+    // No analyzable code for this incident (e.g. no linked repository/fixture).
+    // Degrade to a low-confidence coverage note so the investigation stays
+    // COMPLETE rather than PARTIAL, while still surfacing the reason.
+    emitEvent(ctx, "code_investigator.completed", { noData: true, reason: message });
+    return noDataFinding("CODE", "code", `No source available to analyze (${message}).`);
   }
 }

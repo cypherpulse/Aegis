@@ -6,6 +6,20 @@ export * from "./provider.js";
 export { SimulatorProvider } from "./simulator-provider.js";
 export { ViemProvider } from "./viem-provider.js";
 export { isValidAddress, verifyWalletSignature } from "./wallet.js";
+export {
+  CHAINS,
+  listChains,
+  resolveChain,
+  isValidAddressForChain,
+  rpcUrlFor,
+  getChainClient,
+  getNativeBalance,
+  getLatestBlockNumber,
+  getErc20Transfers,
+  type ChainInfo,
+  type ChainFamily,
+  type Erc20Transfer,
+} from "./chains.js";
 
 export interface ProviderOptions {
   /** Explicit RPC URL. Falls back to BASE_SEPOLIA_RPC_URL when omitted. */
