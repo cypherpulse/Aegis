@@ -5,6 +5,7 @@ import { ArrowRight, Boxes, Plus } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { useCreateProtocol, useProtocols } from "@/hooks/useProtocols";
 import { formatDateTime } from "@/lib/event-copy";
+import { ChainSelect } from "@/lib/chains";
 import type { Protocol } from "@/types/api";
 
 export const Route = createFileRoute("/protocols/")({
@@ -18,7 +19,7 @@ function ProtocolsPage() {
   const create = useCreateProtocol();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [primaryChain, setPrimaryChain] = useState("Base Sepolia");
+  const [primaryChain, setPrimaryChain] = useState("Ethereum");
 
   const submit = () => {
     if (!name.trim()) return;
@@ -68,9 +69,9 @@ function ProtocolsPage() {
               <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
                 Primary chain
               </span>
-              <input
+              <ChainSelect
                 value={primaryChain}
-                onChange={(e) => setPrimaryChain(e.target.value)}
+                onChange={setPrimaryChain}
                 className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
               />
             </label>

@@ -110,14 +110,6 @@ export const CHAIN_OPTIONS: ChainOption[] = [
   { value: "Polygon", label: "Polygon", symbol: "POL", family: "evm", logo: PolygonLogo },
   { value: "Solana", label: "Solana", symbol: "SOL", family: "solana", logo: SolanaLogo },
   { value: "Stacks", label: "Stacks", symbol: "STX", family: "stacks", logo: StacksLogo },
-  {
-    value: "Base Sepolia",
-    label: "Base Sepolia",
-    symbol: "ETH",
-    family: "evm",
-    testnet: true,
-    logo: BaseLogo,
-  },
 ];
 
 const OPTION_BY_VALUE = new Map(CHAIN_OPTIONS.map((o) => [o.value, o]));

@@ -30,17 +30,25 @@ export function authRequired(): boolean {
 }
 
 export function setSessionCookie(reply: FastifyReply, sessionId: string): void {
+  // In production the web app and API may live on different sites (split
+  // hosting), so the session cookie must be SameSite=None; Secure to be sent on
+  // cross-site requests. Dev stays Lax over http.
+  const crossSite = process.env.NODE_ENV === "production";
   reply.setCookie(SESSION_COOKIE, sessionId, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    sameSite: crossSite ? "none" : "lax",
+    secure: crossSite,
     path: "/",
     maxAge: Math.floor(SESSION_TTL_MS / 1000),
   });
 }
 
 export function clearSessionCookie(reply: FastifyReply): void {
-  reply.clearCookie(SESSION_COOKIE, { path: "/" });
+  const crossSite = process.env.NODE_ENV === "production";
+  reply.clearCookie(SESSION_COOKIE, {
+    path: "/",
+    ...(crossSite ? { sameSite: "none" as const, secure: true } : {}),
+  });
 }
 
 /** The authenticated session user, or null. */

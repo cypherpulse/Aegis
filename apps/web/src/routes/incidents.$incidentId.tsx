@@ -9,6 +9,7 @@ import { ApprovalPanel, CapabilityStrip } from "@/components/investigation/Inves
 import { RootCausePanel } from "@/components/investigation/RootCausePanel";
 import { AppShell } from "@/components/layout/AppShell";
 import { PipelineView } from "@/components/pipeline/PipelineView";
+import { StageStrip } from "@/components/pipeline/StageStrip";
 import { useIncident, useInvestigate, useRefetchOnCompletion } from "@/hooks/useIncident";
 import { useIncidentEvents } from "@/hooks/useIncidentEvents";
 
@@ -95,6 +96,10 @@ function IncidentDetailPage() {
 
       <div className="mb-6">
         <CapabilityStrip pipeline={pipeline} />
+      </div>
+
+      <div className="mb-6">
+        <StageStrip pipeline={pipeline} />
       </div>
 
       {historyError ? (

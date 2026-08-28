@@ -1,5 +1,6 @@
 import { makeEvent, type Evidence, type InvestigationFinding } from "@aegis/shared";
 import { callTool } from "@aegis/mcp";
+import type { ContractActivity } from "@aegis/blockchain";
 import {
   evidence,
   noDataFinding,
@@ -16,9 +17,60 @@ import { BLOCKCHAIN_SPEC } from "../specs.js";
 
 const EVM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
 
+/** Build a finding from REAL on-chain activity attached to the incident. */
+function realOnchainFinding(a: ContractActivity): InvestigationFinding {
+  const ev: Evidence[] = [
+    evidence("onchain", "identity", a.address, `${a.isContract ? "deployed contract" : "account"} on ${a.chain}`),
+    evidence("onchain", "balance", a.address, `native balance ${a.nativeBalanceWei} base units (${a.nativeSymbol})`),
+  ];
+  const txCount = a.txTotal ?? a.recentTransferCount;
+  ev.push(
+    evidence(
+      "onchain",
+      "activity",
+      a.address,
+      `${txCount} recent transactions/transfers${a.failedTxCount ? `, ${a.failedTxCount} failed` : ""}`,
+    ),
+  );
+  for (const t of (a.stacksTransactions ?? []).slice(0, 3)) {
+    ev.push(
+      evidence("onchain", "transaction", t.txId, `${t.type} by ${t.sender} — ${t.status} (fee ${t.feeMicroStx} µSTX)`),
+    );
+  }
+  for (const t of a.recentTransfers.slice(0, 3)) {
+    ev.push(evidence("onchain", "transfer", t.txHash, `${t.from} → ${t.to}, value ${t.value}`));
+  }
+  const failing = (a.failedTxCount ?? 0) > 0;
+  return successFinding({
+    investigator: "BLOCKCHAIN",
+    summary:
+      `Real on-chain read of ${a.address} on ${a.chain}: ${a.isContract ? "contract" : "account"}, ` +
+      `${txCount} recent tx/transfers${failing ? `, ${a.failedTxCount} FAILED` : ""}.` +
+      (a.note ? ` (${a.note})` : ""),
+    evidence: ev,
+    confidence: failing ? 0.7 : 0.55,
+    severity: failing ? "HIGH" : "MEDIUM",
+    metadata: {
+      source: "onchain",
+      real: true,
+      chain: a.chain,
+      isContract: a.isContract,
+      txTotal: a.txTotal ?? null,
+      failedTxCount: a.failedTxCount ?? 0,
+      ...(a.explorerUrl ? { explorerUrl: a.explorerUrl } : {}),
+    },
+  });
+}
+
 export function runBlockchainInvestigator(
   ctx: InvestigationContext,
 ): Promise<InvestigationFinding> {
+  // Prefer REAL on-chain activity when the incident carries it (contract review).
+  const activity = ctx.incident.metadata["contractActivity"] as ContractActivity | undefined;
+  if (activity && typeof activity === "object" && activity.address) {
+    return Promise.resolve(realOnchainFinding(activity));
+  }
+
   const treasury = String(
     ctx.incident.metadata["treasuryAddress"] ??
       ctx.incident.metadata["contractAddress"] ??

@@ -27,6 +27,8 @@ export interface ChainInfo {
   /** Monitor alert default when a protocol sets no override, in base units. */
   defaultThresholdBaseUnits: bigint;
   mainnet: boolean;
+  /** Block explorer base URL (no trailing slash). */
+  explorerUrl: string;
   /** viem chain — EVM families only. */
   chain?: Chain;
 }
@@ -44,6 +46,7 @@ export const CHAINS: Record<string, ChainInfo> = {
     decimals: 18,
     defaultThresholdBaseUnits: ONE(18),
     mainnet: true,
+    explorerUrl: "https://etherscan.io",
     chain: mainnet,
   },
   base: {
@@ -55,6 +58,7 @@ export const CHAINS: Record<string, ChainInfo> = {
     decimals: 18,
     defaultThresholdBaseUnits: ONE(18),
     mainnet: true,
+    explorerUrl: "https://basescan.org",
     chain: base,
   },
   arbitrum: {
@@ -66,6 +70,7 @@ export const CHAINS: Record<string, ChainInfo> = {
     decimals: 18,
     defaultThresholdBaseUnits: ONE(18),
     mainnet: true,
+    explorerUrl: "https://arbiscan.io",
     chain: arbitrum,
   },
   optimism: {
@@ -77,6 +82,7 @@ export const CHAINS: Record<string, ChainInfo> = {
     decimals: 18,
     defaultThresholdBaseUnits: ONE(18),
     mainnet: true,
+    explorerUrl: "https://optimistic.etherscan.io",
     chain: optimism,
   },
   polygon: {
@@ -88,6 +94,7 @@ export const CHAINS: Record<string, ChainInfo> = {
     decimals: 18,
     defaultThresholdBaseUnits: ONE(18),
     mainnet: true,
+    explorerUrl: "https://polygonscan.com",
     chain: polygon,
   },
   solana: {
@@ -99,6 +106,7 @@ export const CHAINS: Record<string, ChainInfo> = {
     decimals: 9,
     defaultThresholdBaseUnits: ONE(9), // 1 SOL
     mainnet: true,
+    explorerUrl: "https://solscan.io",
   },
   stacks: {
     key: "stacks",
@@ -109,6 +117,7 @@ export const CHAINS: Record<string, ChainInfo> = {
     decimals: 6,
     defaultThresholdBaseUnits: 100n * ONE(6), // 100 STX
     mainnet: true,
+    explorerUrl: "https://explorer.hiro.so",
   },
   "base-sepolia": {
     key: "base-sepolia",
@@ -119,6 +128,7 @@ export const CHAINS: Record<string, ChainInfo> = {
     decimals: 18,
     defaultThresholdBaseUnits: ONE(18),
     mainnet: false,
+    explorerUrl: "https://sepolia.basescan.org",
     chain: baseSepolia,
   },
 };
@@ -149,6 +159,34 @@ export function resolveChain(nameOrId: string | number | undefined): ChainInfo |
         String(c.chainId) === s,
     ) ?? null
   );
+}
+
+/** Block-explorer link for an address on a chain. */
+export function explorerAddressUrl(key: string, address: string): string | undefined {
+  const info = CHAINS[key];
+  if (!info) return undefined;
+  switch (info.family) {
+    case "solana":
+      return `${info.explorerUrl}/account/${address}`;
+    case "stacks":
+      return `${info.explorerUrl}/address/${encodeURIComponent(address)}?chain=mainnet`;
+    default:
+      return `${info.explorerUrl}/address/${address}`;
+  }
+}
+
+/** Block-explorer link for a transaction hash on a chain. */
+export function explorerTxUrl(key: string, hash: string): string | undefined {
+  const info = CHAINS[key];
+  if (!info) return undefined;
+  switch (info.family) {
+    case "solana":
+      return `${info.explorerUrl}/tx/${hash}`;
+    case "stacks":
+      return `${info.explorerUrl}/txid/${encodeURIComponent(hash)}?chain=mainnet`;
+    default:
+      return `${info.explorerUrl}/tx/${hash}`;
+  }
 }
 
 /** Explicit RPC URL for a chain from env, else the public default (or undefined for EVM). */
@@ -232,6 +270,45 @@ async function stacksBalance(key: string, address: string): Promise<bigint> {
   return BigInt(json.stx?.balance ?? "0"); // microSTX
 }
 
+interface StacksTx {
+  txId: string;
+  sender: string;
+  type: string;
+  feeMicroStx: string;
+  blockHeight: number;
+  status: string;
+}
+
+/** Recent transactions for a Stacks principal/contract, via the Hiro API. */
+async function stacksTransactions(key: string, address: string, limit = 15): Promise<{ total: number; txs: StacksTx[] }> {
+  const base = rpcUrlFor(key) ?? PUBLIC_RPC.stacks!;
+  const res = await fetch(
+    `${base}/extended/v1/address/${encodeURIComponent(address)}/transactions?limit=${limit}`,
+    { headers: { accept: "application/json" } },
+  );
+  if (!res.ok) throw new Error(`Stacks API ${res.status}`);
+  const json = (await res.json()) as {
+    total?: number;
+    results?: Array<{
+      tx_id?: string;
+      sender_address?: string;
+      tx_type?: string;
+      fee_rate?: string;
+      block_height?: number;
+      tx_status?: string;
+    }>;
+  };
+  const txs = (json.results ?? []).map((t) => ({
+    txId: t.tx_id ?? "",
+    sender: t.sender_address ?? "",
+    type: t.tx_type ?? "",
+    feeMicroStx: t.fee_rate ?? "0",
+    blockHeight: t.block_height ?? 0,
+    status: t.tx_status ?? "",
+  }));
+  return { total: json.total ?? txs.length, txs };
+}
+
 /** Native-asset balance in base units, for any supported chain family. */
 export async function getNativeBalance(key: string, address: string): Promise<bigint> {
   const info = CHAINS[key];
@@ -263,6 +340,114 @@ export interface Erc20Transfer {
   value: bigint;
   txHash: string;
   blockNumber: bigint;
+}
+
+export interface ContractActivity {
+  chain: string;
+  chainId: number;
+  address: string;
+  family: ChainFamily;
+  isContract: boolean;
+  nativeBalanceWei: string;
+  nativeSymbol: string;
+  /** Block-explorer link for the address. */
+  explorerUrl?: string | undefined;
+  latestBlock: string;
+  recentTransferCount: number;
+  recentTransfers: Array<{ from: string; to: string; value: string; txHash: string; blockNumber: string }>;
+  /** Stacks only: total tx count + recent transactions with status (real Hiro data). */
+  txTotal?: number;
+  failedTxCount?: number;
+  stacksTransactions?: Array<{
+    txId: string;
+    sender: string;
+    type: string;
+    feeMicroStx: string;
+    blockHeight: number;
+    status: string;
+  }>;
+  note?: string;
+}
+
+/**
+ * Real on-chain activity for an address on its network: native balance, whether
+ * it is a contract, and recent ERC-20 Transfer events (EVM, via public RPC — no
+ * key). Non-EVM chains return balance only. Best-effort: public RPC getLogs
+ * range limits are caught and reported in `note` rather than thrown.
+ */
+export async function getContractActivity(
+  key: string,
+  address: string,
+  lookbackBlocks = 2_000n,
+): Promise<ContractActivity> {
+  const info = CHAINS[key];
+  if (!info) throw new Error(`Unknown chain: ${key}`);
+  const balance = await getNativeBalance(key, address);
+  const base: ContractActivity = {
+    chain: info.name,
+    chainId: info.chainId,
+    address,
+    family: info.family,
+    isContract: false,
+    nativeBalanceWei: balance.toString(),
+    nativeSymbol: info.nativeSymbol,
+    explorerUrl: explorerAddressUrl(key, address),
+    latestBlock: "0",
+    recentTransferCount: 0,
+    recentTransfers: [],
+  };
+  if (info.family === "stacks") {
+    try {
+      const { total, txs } = await stacksTransactions(key, address);
+      const failed = txs.filter((t) => t.status && t.status !== "success").length;
+      return {
+        ...base,
+        isContract: address.includes("."), // contract principals contain `.<name>`
+        txTotal: total,
+        failedTxCount: failed,
+        stacksTransactions: txs,
+        recentTransferCount: txs.length,
+      };
+    } catch (err) {
+      return { ...base, note: `Stacks activity read limited (${err instanceof Error ? err.message : "error"}).` };
+    }
+  }
+  if (info.family !== "evm") {
+    return { ...base, note: `${info.family} chain — native balance only.` };
+  }
+  const client = getChainClient(key);
+  const code = await client
+    .getCode({ address: address as `0x${string}` })
+    .catch(() => undefined);
+  const latest = await client.getBlockNumber();
+  let transfers: Erc20Transfer[] = [];
+  let note: string | undefined;
+  // Try the requested window; high-volume tokens (e.g. USDC) exceed public-RPC
+  // result caps, so retry progressively narrower windows before giving up.
+  for (const span of [lookbackBlocks, 200n, 25n]) {
+    const from = latest > span ? latest - span : 0n;
+    try {
+      transfers = await getErc20Transfers(key, address, from);
+      note = span === lookbackBlocks ? undefined : `Transfers from the last ${span} blocks (RPC result cap).`;
+      break;
+    } catch (err) {
+      note = `Transfer scan limited by RPC (${err instanceof Error ? err.message.slice(0, 80) : "range"}).`;
+    }
+  }
+  return {
+    ...base,
+    isContract: Boolean(code && code !== "0x"),
+    latestBlock: latest.toString(),
+    recentTransferCount: transfers.length,
+    recentTransfers: transfers.slice(0, 15).map((t) => ({
+      from: t.from,
+      to: t.to,
+      value: t.value.toString(),
+      txHash: t.txHash,
+      blockNumber: t.blockNumber.toString(),
+    })),
+    ...(note ? { note } : {}),
+  };
 }
 
 /** ERC-20 Transfer logs for a contract since `fromBlock` (EVM only). */

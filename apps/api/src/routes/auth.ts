@@ -189,7 +189,16 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
             grant_type: "authorization_code",
           }),
         });
-        if (!tokenRes.ok) throw new AppError(401, "UNAUTHORIZED", "Token exchange failed");
+        if (!tokenRes.ok) {
+          // Surface Google's own reason (e.g. redirect_uri_mismatch, invalid_grant).
+          const detail = await tokenRes.text().catch(() => "");
+          req.log.error({ status: tokenRes.status, detail }, "Google token exchange failed");
+          throw new AppError(
+            401,
+            "UNAUTHORIZED",
+            `Token exchange failed: ${detail.slice(0, 300) || tokenRes.status}`,
+          );
+        }
         const token = (await tokenRes.json()) as { access_token?: string };
         if (!token.access_token) throw new AppError(401, "UNAUTHORIZED", "No access token");
         const profileRes = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
@@ -220,7 +229,16 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
         else reply.send(ok({ user: userDto(user) }));
       } catch (e) {
         if (e instanceof AppError) throw e;
-        reply.code(502).send(err("BAD_GATEWAY", "Google OAuth exchange failed"));
+        // Non-AppError = a raw failure (network to Google, JSON parse, or a DB
+        // write). Log the real cause so it is diagnosable, not just BAD_GATEWAY.
+        req.log.error({ err: e }, "Google OAuth callback failed");
+        reply
+          .code(502)
+          .send(
+            err("BAD_GATEWAY", "Google OAuth exchange failed", {
+              reason: e instanceof Error ? e.message : String(e),
+            }),
+          );
       }
     },
   );

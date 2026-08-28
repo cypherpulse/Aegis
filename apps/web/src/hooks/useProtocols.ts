@@ -56,6 +56,14 @@ export function useInvestigateContract(id: string) {
   });
 }
 
+export function useInvestigateTreasury(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (addressId: string) => aegisApi.investigateTreasury(id, addressId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["incidents"] }),
+  });
+}
+
 export function useContracts(id: string | undefined) {
   return useQuery({
     queryKey: ["contracts", id],
