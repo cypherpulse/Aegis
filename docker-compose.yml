@@ -17,5 +17,53 @@ services:
       timeout: 5s
       retries: 10
 
+  # Aegis API + background monitor. Enable with:  docker compose --profile app up
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aegis-api
+    profiles: ["app"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_PORT: "4000"
+      DATABASE_URL: postgresql://aegis:aegis@postgres:5432/aegis
+      # Override at deploy time (never commit real secrets):
+      AUTH_REQUIRED: "${AUTH_REQUIRED:-true}"
+      SESSION_SECRET: "${SESSION_SECRET:-}"
+      # Set to your web app origin(s) in production; empty blocks cross-origin.
+      CORS_ORIGINS: "${CORS_ORIGINS:-}"
+      APP_BASE_URL: "${APP_BASE_URL:-}"
+      # Google OAuth (endpoints stay 501 until all three are set):
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
+      GOOGLE_REDIRECT_URI: "${GOOGLE_REDIRECT_URI:-}"
+      # Monitoring:
+      MONITOR_ENABLED: "${MONITOR_ENABLED:-false}"
+      MONITOR_INTERVAL_MS: "${MONITOR_INTERVAL_MS:-30000}"
+      MONITOR_DEFAULT_THRESHOLD_WEI: "${MONITOR_DEFAULT_THRESHOLD_WEI:-1000000000000000000}"
+      # Chain RPCs (omit to use public defaults):
+      BASE_SEPOLIA_RPC_URL: "${BASE_SEPOLIA_RPC_URL:-}"
+      CHAIN_RPC_ETHEREUM: "${CHAIN_RPC_ETHEREUM:-}"
+      CHAIN_RPC_BASE: "${CHAIN_RPC_BASE:-}"
+      CHAIN_RPC_ARBITRUM: "${CHAIN_RPC_ARBITRUM:-}"
+      CHAIN_RPC_OPTIMISM: "${CHAIN_RPC_OPTIMISM:-}"
+      CHAIN_RPC_POLYGON: "${CHAIN_RPC_POLYGON:-}"
+      CHAIN_RPC_SOLANA: "${CHAIN_RPC_SOLANA:-}"
+      CHAIN_RPC_STACKS: "${CHAIN_RPC_STACKS:-}"
+      # Sandbox (auto-falls back to subprocess when Docker is unavailable in-container):
+      SANDBOX_IMAGE: "${SANDBOX_IMAGE:-aegis-sandbox:latest}"
+      SANDBOX_DRIVER: "${SANDBOX_DRIVER:-subprocess}"
+      # TrueForge Agent Harness:
+      TRUEFORGE_API_URL: "${TRUEFORGE_API_URL:-}"
+      TRUEFORGE_API_KEY: "${TRUEFORGE_API_KEY:-}"
+      TRUEFORGE_COMMANDER_AGENT: "${TRUEFORGE_COMMANDER_AGENT:-aegis-commander}"
+    ports:
+      - "4000:4000"
+
 volumes:
   postgres-data:

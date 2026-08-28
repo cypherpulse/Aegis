@@ -5,10 +5,15 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "bin": {
+    "aegis-mcp": "./src/serve.ts"
+  },
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
+    "start": "tsx src/serve.ts",
+    "mcp": "tsx src/serve.ts",
     "build": "tsc --noEmit -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
@@ -21,6 +26,7 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "tsx": "^4.19.0",
     "typescript": "^5.8.0",
     "vitest": "^3.2.0"
   }

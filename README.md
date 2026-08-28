@@ -182,6 +182,55 @@ pnpm build       # compile check across all packages
 
 ---
 
+## MCP server
+
+The read-only Aegis tools are exposed as a real MCP server (stdio) so any MCP
+client — Claude Code, a TrueForge MCP Gateway connection, etc. — can call them.
+It shares the exact tool handlers used in-process, so there is one source of
+truth.
+
+```bash
+pnpm mcp                       # start the stdio MCP server (aegis-tools)
+# or register the bin directly: aegis-mcp
+```
+
+Real Base Sepolia reads are used when `BASE_SEPOLIA_RPC_URL` is set; otherwise
+the deterministic simulator.
+
+---
+
+## Deployment
+
+Postgres + the API run via Docker Compose:
+
+```bash
+# Postgres only (local dev):
+docker compose up -d postgres && pnpm db:migrate
+
+# Full stack (API image runs migrations on start, monitor optional):
+SESSION_SECRET=... AUTH_REQUIRED=true docker compose --profile app up --build
+```
+
+The API image ([Dockerfile](Dockerfile)) installs the workspace and runs
+`db:migrate` then the API. Configure via environment (`DATABASE_URL`,
+`SESSION_SECRET`, `AUTH_REQUIRED`, `MONITOR_ENABLED`, `TRUEFORGE_*`, `CHAIN_RPC_*`);
+never commit secrets. The sandbox auto-falls back to the subprocess driver inside
+the container.
+
+---
+
+## Qodo Code Review Evidence
+
+Meaningful changes are reviewed by [Qodo](https://www.qodo.ai/) via pull request
+before merge (direct pushes to `main` are not treated as reviewed work).
+
+- Representative reviewed PR: _<link to be added once the PR is opened/merged>_
+- What Qodo found / what changed: _<1–2 lines summarizing findings addressed or intentionally dismissed>_
+
+The PR history shows the automated Qodo review and the follow-up review after fixes.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
