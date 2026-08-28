@@ -16,6 +16,7 @@
     "demo": "tsx scripts/demo.ts",
     "demo:incident": "tsx scripts/demo-incident.ts",
     "api": "pnpm --filter @aegis/api start",
+    "mcp": "pnpm --filter @aegis/mcp start",
     "db:generate": "pnpm --filter @aegis/database db:generate",
     "db:migrate": "pnpm --filter @aegis/database db:migrate",
     "build:sandbox": "tsx scripts/build-sandbox.ts",

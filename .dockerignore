@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/.turbo
+.git
+.github
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+apps/web/.output
+apps/web/.nitro
+apps/web/.tanstack
+coverage
+scratchpad

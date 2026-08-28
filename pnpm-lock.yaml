@@ -295,7 +295,7 @@ importers:
         version: 15.15.0
       nitro:
         specifier: 3.0.260603-beta
-        version: 3.0.260603-beta(drizzle-orm@0.45.2(@types/pg@8.23.1)(pg@8.23.0))(jiti@2.7.0)(rollup@4.62.4)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
+        version: 3.0.260603-beta(dotenv@17.4.2)(drizzle-orm@0.45.2(@types/pg@8.23.1)(pg@8.23.0))(jiti@2.7.0)(rollup@4.62.4)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
       prettier:
         specifier: ^3.7.3
         version: 3.9.6
@@ -432,11 +432,14 @@ importers:
         version: link:../../simulator
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
-        version: 1.30.0(zod@3.25.76)
+        version: 1.30.0(@cfworker/json-schema@4.1.1)(zod@3.25.76)
       zod:
         specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.12
       typescript:
         specifier: ^5.8.0
         version: 5.9.3
@@ -600,6 +603,9 @@ packages:
   '@babel/types@7.29.8':
     resolution: {integrity: sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==}
     engines: {node: '>=6.9.0'}
+
+  '@cfworker/json-schema@4.1.1':
+    resolution: {integrity: sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og==}
 
   '@date-fns/tz@1.5.0':
     resolution: {integrity: sha512-lwYN/vDPeNRULcepoE/LO2Pgx+7/RV+S9ARfbc9lr2DtGkOD7pAiruHvbR1RX3Qyf6ja47EWJDMsNK5vK08DJg==}
@@ -2992,6 +2998,10 @@ packages:
   dom-helpers@5.2.1:
     resolution: {integrity: sha512-nRCa7CK3VTrM2NmGkIy4cbK7IZlgBE/PYMn55rrXefr5xXDP0LdtfPnblFDoVdcAfslJ7or6iqAUnx0CCGIWQA==}
 
+  dotenv@17.4.2:
+    resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
+    engines: {node: '>=12'}
+
   drizzle-kit@0.31.10:
     resolution: {integrity: sha512-7OZcmQUrdGI+DUNNsKBn1aW8qSoKuTH7d0mYgSP8bAzdFzKoovxEFnoGQp2dVs82EOJeYycqRtciopszwUf8bw==}
     hasBin: true
@@ -4872,6 +4882,9 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
+  '@cfworker/json-schema@4.1.1':
+    optional: true
+
   '@date-fns/tz@1.5.0': {}
 
   '@drizzle-team/brocli@0.10.2': {}
@@ -5282,7 +5295,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@modelcontextprotocol/sdk@1.30.0(zod@3.25.76)':
+  '@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@3.25.76)':
     dependencies:
       '@hono/node-server': 2.1.1(hono@4.13.3)
       ajv: 8.20.0
@@ -5301,6 +5314,8 @@ snapshots:
       raw-body: 3.0.2
       zod: 3.25.76
       zod-to-json-schema: 3.25.2(zod@3.25.76)
+    optionalDependencies:
+      '@cfworker/json-schema': 4.1.1
     transitivePeerDependencies:
       - supports-color
 
@@ -6979,6 +6994,9 @@ snapshots:
       '@babel/runtime': 7.29.7
       csstype: 3.2.3
 
+  dotenv@17.4.2:
+    optional: true
+
   drizzle-kit@0.31.10:
     dependencies:
       '@drizzle-team/brocli': 0.10.2
@@ -7718,7 +7736,7 @@ snapshots:
 
   nf3@0.3.24: {}
 
-  nitro@3.0.260603-beta(drizzle-orm@0.45.2(@types/pg@8.23.1)(pg@8.23.0))(jiti@2.7.0)(rollup@4.62.4)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)):
+  nitro@3.0.260603-beta(dotenv@17.4.2)(drizzle-orm@0.45.2(@types/pg@8.23.1)(pg@8.23.0))(jiti@2.7.0)(rollup@4.62.4)(vite@8.1.5(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)):
     dependencies:
       consola: 3.4.2
       crossws: 0.4.12(srvx@0.11.22)
@@ -7735,6 +7753,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       unstorage: 2.0.0-alpha.9
     optionalDependencies:
+      dotenv: 17.4.2
       jiti: 2.7.0
       rollup: 4.62.4
       vite: 8.1.5(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)

@@ -17,5 +17,31 @@ services:
       timeout: 5s
       retries: 10
 
+  # Aegis API + background monitor. Enable with:  docker compose --profile app up
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aegis-api
+    profiles: ["app"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_PORT: "4000"
+      DATABASE_URL: postgresql://aegis:aegis@postgres:5432/aegis
+      # Override at deploy time (never commit real secrets):
+      AUTH_REQUIRED: "${AUTH_REQUIRED:-true}"
+      SESSION_SECRET: "${SESSION_SECRET:-}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-}"
+      MONITOR_ENABLED: "${MONITOR_ENABLED:-false}"
+      TRUEFORGE_API_URL: "${TRUEFORGE_API_URL:-}"
+      TRUEFORGE_API_KEY: "${TRUEFORGE_API_KEY:-}"
+      TRUEFORGE_COMMANDER_AGENT: "${TRUEFORGE_COMMANDER_AGENT:-aegis-commander}"
+    ports:
+      - "4000:4000"
+
 volumes:
   postgres-data:
