@@ -53,16 +53,42 @@ function googleConfig(): GoogleConfig | null {
 }
 
 /** Only allow returning to a localhost origin (dev) — prevents open redirects. */
+/** Configured production origins (CORS_ORIGINS + APP_BASE_URL) for the redirect allowlist. */
+function configuredOrigins(): Set<string> {
+  const set = new Set<string>();
+  for (const raw of process.env.CORS_ORIGINS?.split(",") ?? []) {
+    const o = raw.trim();
+    if (o) {
+      try {
+        set.add(new URL(o).origin);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  const appBase = process.env.APP_BASE_URL?.trim();
+  if (appBase) {
+    try {
+      set.add(new URL(appBase).origin);
+    } catch {
+      /* ignore */
+    }
+  }
+  return set;
+}
+
+/**
+ * Validate a post-login redirect origin against an allowlist (open-redirect
+ * guard): localhost in dev, plus any origin configured via CORS_ORIGINS or
+ * APP_BASE_URL. This is what lets Google login return to the deployed web app.
+ */
 function safeOrigin(raw: string | undefined): string | null {
   if (!raw) return null;
   try {
     const url = new URL(raw);
-    if (
-      (url.protocol === "http:" || url.protocol === "https:") &&
-      (url.hostname === "localhost" || url.hostname === "127.0.0.1")
-    ) {
-      return url.origin;
-    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return url.origin;
+    if (configuredOrigins().has(url.origin)) return url.origin;
   } catch {
     /* invalid */
   }
