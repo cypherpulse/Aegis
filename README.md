@@ -1,245 +1,223 @@
 # Aegis
 
-**AI-powered incident investigation for blockchain protocols.**
+**An AI first responder for blockchain protocols.**
 
-Aegis takes an onchain incident, spins up a real agent-harness session, delegates
-to specialist investigators that reach read-only tools over MCP, correlates their
-structured findings, inspects the application code, validates hypotheses in an
-isolated sandbox, and returns a unified **root cause** — all persisted and exposed
-through a clean REST + streaming API.
+When something goes wrong on chain, a treasury draining below its gas reserve, a contract acting up, or funds moving unexpectedly, Aegis investigates on its own and returns a root cause you can actually trust, backed by real evidence. Anything irreversible stops for a human to approve.
 
-It is designed around one principle: give the agent a *license to act* — it can
-**reach tools**, **run code safely**, and **be stopped** at a human approval gate.
+Autonomous agents. Real on-chain data across seven chains. Live in production.
 
 ---
 
-## How it works
+## Why
 
+On-chain incidents are fast and impossible to undo, and they touch several things at once: chain state, treasury health, application behaviour, and the protocol's own code. Today a team firefights across explorers, RPCs, dashboards, and repos while money is on the line. Nothing investigates the whole thing end to end and explains *why* it happened.
+
+Aegis is that first responder. It starts triaging before anyone is even awake.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TB
+  subgraph Client["Web console"]
+    UI["React · TanStack Start<br/>live SSE timeline + assistant"]
+  end
+
+  subgraph Backend["API · Fastify"]
+    API["REST + SSE + OpenAPI"]
+    JOBS["Async job runner"]
+    MON["Background monitor"]
+  end
+
+  subgraph Core["Investigation engine"]
+    ENG["runInvestigation()"]
+    FUSE["Evidence fusion"]
+    RC["Root cause"]
+  end
+
+  subgraph Agents["Agents"]
+    CMD["Incident Commander"]
+    INV["Blockchain · Treasury · Application · Code"]
+  end
+
+  TF["TrueForge Agent Harness<br/>aegis-commander"]
+  MCP["MCP read-only tools"]
+  SB["Hardened sandbox"]
+  DB[("PostgreSQL")]
+  CHAINS["Ethereum · Base · Arbitrum · Optimism<br/>Polygon · Solana · Stacks"]
+
+  UI -->|REST + SSE| API
+  API --> JOBS --> ENG
+  MON -->|large movement detected| JOBS
+  ENG --> CMD --> INV
+  ENG --> TF
+  INV --> MCP --> CHAINS
+  ENG --> FUSE --> RC
+  ENG --> SB
+  RC -->|synthesised by agent| TF
+  API --> DB
+  ENG --> DB
 ```
-INCIDENT
-   │
-   ▼
-AGENT-HARNESS SESSION            (TrueForge — real when credentialed, local otherwise)
-   │
-   ▼
-INCIDENT COMMANDER
-   │
-   ├── BLOCKCHAIN  INVESTIGATOR ┐
-   ├── TREASURY    INVESTIGATOR │  run in parallel, failures isolated
-   └── APPLICATION INVESTIGATOR ┘  (read-only MCP tools; a sensitive tool
-   │                                passes a human-in-the-loop approval gate)
-   ▼
-EVIDENCE FUSION                  (deterministic correlation → hypothesis)
-   │
-   ▼
-CODE INVESTIGATOR                (reads a jailed code fixture via read-only tools)
-   │
-   ▼
-SANDBOX                          (runs the analysis in a hardened container / isolate)
-   │
-   ▼
-ROOT CAUSE                       (deterministic aggregation → title + confidence)
+
+---
+
+## How an investigation runs
+
+```mermaid
+flowchart LR
+  I["Incident"] --> S["TrueForge<br/>session"]
+  S --> C["Incident<br/>Commander"]
+  C --> B["Blockchain"]
+  C --> T["Treasury"]
+  C --> A["Application"]
+  B --> F["Evidence<br/>Fusion"]
+  T --> F
+  A --> F
+  F --> CO["Code<br/>Investigator"]
+  CO --> SB["Sandbox<br/>validation"]
+  SB --> R["Root Cause<br/>agent-shaped"]
+  R --> H{"Irreversible<br/>action?"}
+  H -->|yes| HA["Human<br/>approval gate"]
+  H -->|no| D["Evidence-backed<br/>report"]
+  HA --> D
 ```
 
-Every stage emits a structured event; every result is persisted and streamable.
+Every stage streams a structured event, so you watch the whole thing happen live. Specialists run in parallel and failures are isolated: one investigator can never take down the run. When the harness is connected, `aegis-commander` reads the real findings and writes the final root cause, so the conclusion is specific to that incident, not a template.
 
-### The reference scenario
+### The autonomous monitor
 
-A deterministic **treasury gas depletion** incident on Base Sepolia: the
-treasury's native balance falls below the gas reserve, payout transactions revert
-for insufficient gas, and the payout worker retries in a loop. A built-in
-simulator makes it reproducible on every run, and a code fixture carries the
-matching bug for the Code Investigator to discover.
+```mermaid
+sequenceDiagram
+  participant M as Monitor
+  participant C as Chains
+  participant A as Aegis
+  loop every interval
+    M->>C: read balances + transfers (registered contracts/treasuries)
+    C-->>M: on-chain state
+    alt movement crosses threshold
+      M->>A: open incident + launch investigation
+      A-->>M: streaming root cause
+    end
+  end
+```
+
+---
+
+## What it does
+
+- **Autonomous multi-agent investigation.** A commander dispatches specialists, fuses their findings, validates the theory in a sandbox, and produces a confidence-scored root cause.
+- **Real on-chain data, not mocks.** Balances, contract state, and actual recent transactions across seven chains.
+- **A background monitor** that opens an incident and investigates on its own when funds move past a threshold.
+- **An agentic assistant** you can talk to. Ask it to analyse an incident or investigate a contract in plain language and it calls the right tools itself.
+- **Human in the loop.** Any sensitive or irreversible step stops at an approval gate. The agents do the grunt work, you stay in control.
+- **Wallet or Google sign in**, per-user data isolation, and a live console that streams every step.
+
+---
+
+## Chains
+
+| Chain | Family | Data source |
+|---|---|---|
+| Ethereum, Base, Arbitrum, Optimism, Polygon | EVM | viem over public RPC (or your own) |
+| Solana | SVM | JSON-RPC |
+| Stacks | Stacks | Hiro API |
+
+Each reads native balance, whether an address is a contract, and recent real transactions, with block-explorer links.
+
+---
+
+## Built on
+
+- **TrueForge (TrueFoundry Agent Harness)** is the real agent runtime. A deployed `aegis-commander` agent drives investigations, shapes the root cause from real evidence, and powers the assistant through streaming turns. It degrades to a deterministic local runtime if the gateway is unreachable, so the product never breaks.
+- **A real MCP server** exposes the read-only tools, sharing the exact handlers used in-process.
+- **Qodo** reviewed every meaningful change through pull requests before merge.
 
 ---
 
 ## Quick start
 
-Requirements: **Node ≥ 18** (tested on 22) and **pnpm 10**.
+Requires **Node 22** and **pnpm 10**.
 
 ```bash
 pnpm install
 pnpm demo
 ```
 
-`pnpm demo` runs the entire pipeline end-to-end — session → commander → three
-investigators → fusion → code investigator → sandbox → root cause — streaming the
-event timeline and printing every finding plus the final root cause. It is fully
-deterministic and needs **no credentials, database, or network**.
+`pnpm demo` runs the full pipeline end to end (session, commander, three investigators, fusion, code investigator, sandbox, root cause) and streams the event timeline. No credentials, database, or network required.
 
-### Running the backend API
+### Run the console + API locally
 
 ```bash
-docker compose up -d postgres        # Postgres on localhost:5544
-pnpm db:migrate                      # apply database migrations
-pnpm build:sandbox                   # optional: build the hardened sandbox image
-pnpm --filter @aegis/api dev         # API on http://localhost:4000
+docker compose up -d postgres      # Postgres on :5544
+pnpm db:migrate                    # apply migrations
+pnpm --filter @aegis/api dev       # API on :4000
+cd apps/web && pnpm dev            # console on :3000
 ```
+
+Copy [`.env.example`](.env.example) to `.env`. The only thing the API needs is `DATABASE_URL`; set `TRUEFORGE_API_URL` + `TRUEFORGE_API_KEY` to run against the real harness, and `CHAIN_RPC_*` to use your own RPCs.
+
+### MCP server
 
 ```bash
-# create an incident (empty body = the reference scenario) and follow it live
-curl -X POST http://localhost:4000/api/v1/incidents -H 'content-type: application/json' -d '{}'
-curl -N  http://localhost:4000/api/v1/incidents/<id>/events/stream    # live SSE
-curl     http://localhost:4000/api/v1/incidents/<id>                  # full state + root cause
+pnpm mcp     # stdio MCP server exposing the read-only Aegis tools
 ```
-
-API reference: [`docs/api.md`](docs/api.md) · integration guide:
-[`docs/frontend-integration.md`](docs/frontend-integration.md) · machine-readable
-spec: `GET /api/openapi.json`.
-
----
-
-## Project structure
-
-A pnpm + TypeScript (strict) monorepo.
-
-| Package | Responsibility |
-|---|---|
-| `packages/shared` | Domain types + Zod schemas: incident, finding, evidence, root cause, events, errors. |
-| `simulator` | Deterministic incident fixture and telemetry read functions. |
-| `packages/blockchain` | `BlockchainProvider` abstraction → simulator or real Base Sepolia (viem). |
-| `packages/mcp` | Read-only tools (schemas, validation, error handling) + a real MCP server. |
-| `packages/trueforge` | Agent-harness session, agent runners, and the approval controller. |
-| `packages/agents` | Incident Commander + Blockchain / Treasury / Application / Code investigators. |
-| `packages/incident-engine` | Evidence Fusion + Root Cause + the `runInvestigation` orchestrator. |
-| `packages/sandbox` | Sandbox drivers: hardened Docker container + subprocess isolate. |
-| `packages/database` | PostgreSQL + Drizzle schema, migrations, repositories, persistence store. |
-| `apps/api` | Fastify REST API + SSE + OpenAPI, event publisher, background job runner. |
-| `fixtures/demo-app` | Code fixture carrying the bug the Code Investigator discovers. |
-
----
-
-## What's real vs. simulated
-
-| Component | Behavior |
-|---|---|
-| **Agent-harness session** | Real TrueForge session (`AgentSessionClient.createSession` + a bounded streaming turn) when credentials are set; a deterministic local session otherwise. Never crashes if TrueForge is unreachable. |
-| **MCP tools** | Real tool layer with Zod input/output schemas, exposed via a real MCP server *and* an in-process registry (one source of truth). All read-only. |
-| **Blockchain data** | Deterministic simulator by default; real Base Sepolia reads via viem when `BASE_SEPOLIA_RPC_URL` is set. |
-| **Investigators, fusion, findings, root cause** | Real logic — every finding and confidence value is computed from the tools' output, never hardcoded. |
-| **Approval gate** | Real. A sensitive tool emits `approval.requested` → `approval.granted` (auto in the demo; supports a manual/timeout policy). |
-| **Persistence & API** | Real PostgreSQL (Drizzle) + Fastify REST/SSE with OpenAPI; investigations run asynchronously and events stream per-incident. |
-| **Sandbox** | Real execution of the analysis program — hardened Docker container when available, locked-down subprocess isolate otherwise. |
-
----
-
-## Agent-harness integration
-
-- **Runtime** — `truefoundry-gateway-sdk`: `AgentSessionClient` → `createSession`
-  → `prepareTurn` → streaming `execute`. Harness turn events map onto Aegis's
-  structured agent events.
-- **Control plane** — `truefoundry-sdk` for agent/skill definitions and traces
-  (lazy-loaded; used when credentials are present).
-- Every SDK call is verified against the installed package's types.
-
----
-
-## Security
-
-Aegis is **read-only and isolated**. There is no signing, transaction execution,
-fund transfer, or destructive operation.
-
-- Investigation tools are schema-validated, read-only, and **path-jailed** — the
-  code tools cannot escape the fixture directory.
-- The **sandbox** treats generated code as untrusted and never runs it via
-  `eval`/`Function`/`exec` on the host. It uses a hardened Docker container
-  (`--network none`, non-root, read-only rootfs, memory/CPU/pid limits, no project
-  mount, no secrets) when available, or a locked-down subprocess isolate (cleaned
-  environment, temp workspace, hard timeout with kill) otherwise.
-- The API validates all input, sets security headers, configures CORS explicitly,
-  limits body size, and never leaks stack traces.
-
-Any future remediation stops at an explicit human-approval boundary — no
-autonomous fund movement.
-
----
-
-## Configuration
-
-Copy [`.env.example`](.env.example) to `.env`. Everything is optional for
-`pnpm demo`; the API needs `DATABASE_URL`.
-
-| Variable | Purpose |
-|---|---|
-| `DATABASE_URL` | Postgres connection for the API (default `…@localhost:5544/aegis`). |
-| `API_PORT`, `CORS_ORIGINS` | API port and allowed CORS origins. |
-| `BASE_SEPOLIA_RPC_URL` | Enables real Base Sepolia reads (read-only, no keys). |
-| `TRUEFORGE_API_URL`, `TRUEFORGE_API_KEY` | Enable the real TrueForge harness session. |
-| `SANDBOX_DRIVER` | Force `docker` or `subprocess` (default: auto). |
-| `CODE_FIXTURE_ROOT` | Override the code fixture path. |
-
----
-
-## Development
-
-```bash
-pnpm typecheck   # tsc across all packages
-pnpm lint        # eslint (flat config, typescript-eslint)
-pnpm test        # vitest, per package
-pnpm test:e2e    # end-to-end pipeline
-pnpm build       # compile check across all packages
-```
-
----
-
-## MCP server
-
-The read-only Aegis tools are exposed as a real MCP server (stdio) so any MCP
-client — Claude Code, a TrueForge MCP Gateway connection, etc. — can call them.
-It shares the exact tool handlers used in-process, so there is one source of
-truth.
-
-```bash
-pnpm mcp                       # start the stdio MCP server (aegis-tools)
-# or register the bin directly: aegis-mcp
-```
-
-Real Base Sepolia reads are used when `BASE_SEPOLIA_RPC_URL` is set; otherwise
-the deterministic simulator.
 
 ---
 
 ## Deployment
 
-Postgres + the API run via Docker Compose:
+The stack runs split: the console on Netlify and the API on Render against a managed Postgres (Neon). The API ships as a single Docker image ([Dockerfile](Dockerfile)) that migrates on start.
 
-```bash
-# Postgres only (local dev):
-docker compose up -d postgres && pnpm db:migrate
-
-# Full stack (API image runs migrations on start, monitor optional):
-SESSION_SECRET=... AUTH_REQUIRED=true docker compose --profile app up --build
-```
-
-The API image ([Dockerfile](Dockerfile)) installs the workspace and runs
-`db:migrate` then the API. Configure via environment (`DATABASE_URL`,
-`SESSION_SECRET`, `AUTH_REQUIRED`, `MONITOR_ENABLED`, `TRUEFORGE_*`, `CHAIN_RPC_*`);
-never commit secrets. The sandbox auto-falls back to the subprocess driver inside
-the container.
+Auth is token based (bearer), so the console and API can live on different domains with no cookie or proxy gymnastics. Set `VITE_API_BASE_URL` on the console and `CORS_ORIGINS` on the API to each other's origins.
 
 ---
 
-## Qodo Code Review Evidence
+## Security
 
-Meaningful changes are reviewed by [Qodo](https://www.qodo.ai/) via pull request
-before merge (direct pushes to `main` are not treated as reviewed work).
+Aegis is read-only and isolated. No signing, no transactions, no fund movement.
 
-- **Reviewed & merged PR:** [#1 — feat: finalize MCP, deploy, multichain, isolation, agentic assistant](https://github.com/cypherpulse/Aegis/pull/1)
-- **What Qodo found → what changed:** Qodo's automated review flagged four bugs, all
-  fixed in the follow-up commit: (1) the Docker build omitted the root-level
-  `simulator` workspace so `pnpm install --frozen-lockfile` would fail — now the
-  full workspace is copied before install; (2) the `aegis-mcp` bin pointed at a
-  `.ts` file with no launcher — added a `tsx` shebang; (3) the Compose `api`
-  service dropped documented runtime env (`CHAIN_RPC_*`, monitor tuning,
-  `GOOGLE_*`, sandbox) — now forwarded; and (4) a **security** issue where
-  credentialed CORS defaulted to reflecting any origin — production now requires
-  an explicit `CORS_ORIGINS` allowlist.
+- Every investigation tool is schema-validated, read-only, and path-jailed.
+- The sandbox treats generated code as untrusted: a hardened Docker container (`--network none`, non-root, read-only rootfs, resource limits) when available, or a locked-down subprocess isolate otherwise. Never `eval` on the host.
+- The API validates input, sets security headers, requires an explicit CORS allowlist in production, limits body size, and never leaks stack traces.
+- Any future remediation stops at a human approval boundary.
 
-The PR thread shows the automated Qodo review and the follow-up `/agentic_review`
-after the fixes were pushed.
+---
+
+## Project structure
+
+A strict-TypeScript pnpm monorepo.
+
+| Package | Responsibility |
+|---|---|
+| `packages/shared` | Domain types and Zod schemas. |
+| `packages/blockchain` | Multichain reads (EVM, Solana, Stacks), address validation, explorer links. |
+| `packages/mcp` | Read-only tools + a real MCP server. |
+| `packages/trueforge` | Agent-harness session, runners, approval controller. |
+| `packages/agents` | Incident Commander and the investigators. |
+| `packages/incident-engine` | Evidence fusion, root cause, and the `runInvestigation` orchestrator. |
+| `packages/sandbox` | Hardened Docker + subprocess sandbox drivers. |
+| `packages/database` | PostgreSQL + Drizzle schema, migrations, repositories. |
+| `apps/api` | Fastify REST + SSE + OpenAPI, monitor, assistant, job runner. |
+| `apps/web` | The console (React, TanStack Start). |
+
+---
+
+## Qodo code review evidence
+
+Every meaningful change went through a pull request so [Qodo](https://www.qodo.ai/) could review it before merge.
+
+**Reviewed and merged:** [PR #1](https://github.com/cypherpulse/Aegis/pull/1). Qodo's automated review found four real bugs, all fixed before merge:
+
+1. The production Dockerfile omitted the root-level `simulator` workspace, so the image would never build.
+2. The `aegis-mcp` binary had no launcher and would not start.
+3. The Docker Compose API service dropped documented runtime settings.
+4. A security bug: credentialed CORS defaulted to reflecting any origin, so any site could make authenticated requests. Production now requires an explicit allowlist.
+
+The PR thread shows the automated review, our fixes, and the follow-up review.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
