@@ -86,8 +86,46 @@ export function AppShell({
           </div>
           <div className={cn("ml-auto flex items-center gap-4")}>{right}</div>
         </header>
-        <main className="mx-auto w-full max-w-[1280px] flex-1 px-5 py-8 md:px-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1280px] flex-1 px-5 pb-24 pt-6 md:px-8 md:py-8">
+          {children}
+        </main>
       </div>
+
+      {/* Mobile bottom navigation (sidebar is hidden on small screens). */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border bg-background/95 backdrop-blur md:hidden">
+        <MobileNavItem to="/overview" icon={LayoutGrid} label="Overview" />
+        <MobileNavItem to="/protocols" icon={Boxes} label="Protocols" />
+        <MobileNavItem to="/incidents" icon={Siren} label="Incidents" />
+        <MobileNavItem to="/assistant" icon={Sparkles} label="Assistant" />
+        {user ? (
+          <button
+            onClick={() => logout.mutate()}
+            className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-muted-foreground"
+          >
+            <LogOut className="size-5" /> Log out
+          </button>
+        ) : (
+          <Link
+            to="/login"
+            className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-primary"
+          >
+            <LogOut className="size-5 rotate-180" /> Sign in
+          </Link>
+        )}
+      </nav>
     </div>
+  );
+}
+
+function MobileNavItem({ to, icon: Icon, label }: { to: string; icon: typeof Boxes; label: string }) {
+  return (
+    <Link
+      to={to}
+      className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-muted-foreground transition-colors"
+      activeProps={{ className: "text-primary" }}
+    >
+      <Icon className="size-5" />
+      {label}
+    </Link>
   );
 }

@@ -123,11 +123,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    // suppressHydrationWarning: browser/wallet extensions (e.g. Stacks/Leather,
+    // Grammarly) inject attributes into <html>/<body> before hydration, which
+    // otherwise trips React's hydration mismatch (error #418).
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
-      <body className="min-h-screen bg-background text-foreground antialiased">
+      <body
+        className="min-h-screen bg-background text-foreground antialiased"
+        suppressHydrationWarning
+      >
         {children}
         <Scripts />
       </body>
