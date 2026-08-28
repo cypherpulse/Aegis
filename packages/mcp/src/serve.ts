@@ -1,3 +1,4 @@
+#!/usr/bin/env -S npx tsx
 import { fileURLToPath } from "node:url";
 import { createBlockchainProvider } from "@aegis/blockchain";
 import { startStdioMcpServer } from "./server.js";

@@ -20,10 +20,25 @@ for (const url of ["../../../.env", "../.env"]) {
 async function main(): Promise<void> {
   const dbHandle = createDb();
   const corsEnv = process.env.CORS_ORIGINS?.trim();
+  // Credentials are enabled, so never reflect arbitrary origins in production —
+  // that would let any site make credentialed requests. Require an explicit
+  // allowlist there; only dev reflects any origin for convenience.
+  let corsOrigins: string[] | boolean;
+  if (corsEnv) {
+    corsOrigins = corsEnv.split(",").map((s) => s.trim());
+  } else if (process.env.NODE_ENV === "production") {
+    corsOrigins = false;
+    console.warn(
+      "[api] CORS_ORIGINS is not set in production — cross-origin browser requests are blocked. " +
+        "Set CORS_ORIGINS to your web app origin(s).",
+    );
+  } else {
+    corsOrigins = true;
+  }
   const { app, jobs } = await buildApp({
     db: dbHandle,
     logger: true,
-    corsOrigins: corsEnv ? corsEnv.split(",").map((s) => s.trim()) : true,
+    corsOrigins,
   });
 
   // Background monitor (opt-in): watches registered contracts/treasury on their

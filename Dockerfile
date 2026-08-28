@@ -8,14 +8,11 @@ WORKDIR /app
 # pnpm via corepack (pinned to the repo's packageManager).
 RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
 
-# Install dependencies first (better layer caching).
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
-COPY apps/api/package.json ./apps/api/
-COPY packages ./packages
-RUN pnpm install --frozen-lockfile
-
-# App source.
+# Copy the whole workspace, then install. Every workspace member's manifest
+# (apps/*, packages/*, and the root-level `simulator` package) must be present
+# for `pnpm install --frozen-lockfile` to resolve the workspace: dependencies.
 COPY . .
+RUN pnpm install --frozen-lockfile
 
 ENV NODE_ENV=production
 ENV API_PORT=4000
