@@ -71,7 +71,7 @@ function Landing() {
             <p className="font-mono text-[11px] uppercase tracking-[0.35em] text-primary">
               AI Incident Response Infrastructure
             </p>
-            <h1 className="mt-5 font-display text-5xl font-bold leading-[1.05] tracking-tight sm:text-6xl">
+            <h1 className="mt-5 font-display text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
               Detect.
               <br />
               Investigate.
@@ -221,7 +221,7 @@ function Landing() {
       {/* Final CTA */}
       <section>
         <div className="mx-auto w-full max-w-[1200px] px-6 py-24 text-center">
-          <h2 className="mx-auto max-w-2xl font-display text-4xl font-bold leading-tight tracking-tight">
+          <h2 className="mx-auto max-w-2xl font-display text-3xl font-bold leading-tight tracking-tight sm:text-4xl">
             An incident happens once.
             <br />
             Your investigation shouldn't start from zero.
