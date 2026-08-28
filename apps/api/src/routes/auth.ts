@@ -141,7 +141,8 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
       const user = await upsertWalletUser(db, address);
       const session = await createSession(db, user.id, SESSION_TTL_MS);
       setSessionCookie(reply, session.id);
-      reply.send(ok({ user: userDto(user) }));
+      // Also return the token so the client can use header auth (cross-site, no cookie).
+      reply.send(ok({ user: userDto(user), token: session.id }));
     },
   );
 
@@ -250,9 +251,12 @@ export function registerAuthRoutes(app: FastifyInstance, db: Database): void {
             origin = null;
           }
         }
-        const target = origin ? `${origin}/overview` : (process.env.APP_BASE_URL ?? null);
-        if (target) reply.redirect(target);
-        else reply.send(ok({ user: userDto(user) }));
+        // Pass the session token back in the URL fragment (not sent to servers,
+        // not logged) so the web app can store it and use header auth — no
+        // cross-site cookie needed.
+        const base = origin ? `${origin}/overview` : (process.env.APP_BASE_URL ?? null);
+        if (base) reply.redirect(`${base}#token=${encodeURIComponent(session.id)}`);
+        else reply.send(ok({ user: userDto(user), token: session.id }));
       } catch (e) {
         if (e instanceof AppError) throw e;
         // Non-AppError = a raw failure (network to Google, JSON parse, or a DB
