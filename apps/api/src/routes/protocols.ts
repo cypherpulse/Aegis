@@ -1,4 +1,4 @@
-import { isValidAddressForChain, resolveChain } from "@aegis/blockchain";
+import { getContractActivity, isValidAddressForChain, resolveChain } from "@aegis/blockchain";
 import {
   archiveProtocol,
   createContract,
@@ -316,12 +316,29 @@ export function registerProtocolRoutes(
         return;
       }
       const chain = resolveChain(c.chain);
+      // Read REAL on-chain activity for the contract so the investigation is
+      // grounded in this specific contract (not a generic scenario).
+      let activity: Awaited<ReturnType<typeof getContractActivity>> | null = null;
+      if (chain) {
+        try {
+          activity = await getContractActivity(chain.key, c.address);
+        } catch {
+          /* best-effort — investigation still runs */
+        }
+      }
+      const activityLine = activity
+        ? ` On-chain: ${activity.isContract ? "contract" : "account"}, ` +
+          `balance ${activity.nativeBalanceWei} ${activity.nativeSymbol} base units, ` +
+          `${activity.txTotal ?? activity.recentTransferCount} recent tx/transfers` +
+          (activity.failedTxCount ? `, ${activity.failedTxCount} failed` : "") +
+          "."
+        : "";
       const incident: Incident = {
         id: genId("INC"),
         type: "TREASURY_GAS_DEPLETION",
         severity: "HIGH",
-        title: `Investigate contract ${c.name}`,
-        description: `Manual investigation requested for ${c.name} (${c.address}) on ${c.chain}.`,
+        title: `Investigate ${c.name} on ${c.chain}`,
+        description: `Investigation of ${c.name} (${c.address}) on ${c.chain}.${activityLine}`,
         affectedProtocol: req.params.id,
         chain: { name: c.chain, chainId: chain?.chainId ?? CHAIN_IDS[c.chain] ?? 0 },
         detectedAt: nowIso(),
@@ -331,6 +348,7 @@ export function registerProtocolRoutes(
           contractId: c.id,
           contractAddress: c.address,
           chain: c.chain,
+          ...(activity ? { contractActivity: activity } : {}),
         },
       };
       await createIncident(db, incident, req.params.id, user.id);
@@ -428,6 +446,59 @@ export function registerProtocolRoutes(
       }
       await deleteTreasury(db, req.params.addressId);
       reply.code(204).send();
+    },
+  );
+
+  // Launch a real agent investigation for a specific treasury address.
+  app.post<{ Params: { id: string; addressId: string } }>(
+    `${base}/:id/treasury/:addressId/investigate`,
+    async (req, reply) => {
+      const { user } = await requireProtocolAccess(db, req, req.params.id);
+      const t = await getTreasury(db, req.params.addressId);
+      if (!t || t.protocolId !== req.params.id) {
+        reply.code(404).send(err("NOT_FOUND", "Treasury address not found"));
+        return;
+      }
+      const chain = resolveChain(t.chain);
+      let activity: Awaited<ReturnType<typeof getContractActivity>> | null = null;
+      if (chain) {
+        try {
+          activity = await getContractActivity(chain.key, t.address);
+        } catch {
+          /* best-effort */
+        }
+      }
+      const label = t.label || t.address;
+      const activityLine = activity
+        ? ` On-chain: balance ${activity.nativeBalanceWei} ${activity.nativeSymbol} base units, ` +
+          `${activity.txTotal ?? activity.recentTransferCount} recent tx/transfers` +
+          (activity.failedTxCount ? `, ${activity.failedTxCount} failed` : "") +
+          "."
+        : "";
+      const incident: Incident = {
+        id: genId("INC"),
+        type: "TREASURY_GAS_DEPLETION",
+        severity: "HIGH",
+        title: `Investigate treasury ${label} on ${t.chain}`,
+        description: `Investigation of treasury ${label} (${t.address}) on ${t.chain}.${activityLine}`,
+        affectedProtocol: req.params.id,
+        chain: { name: t.chain, chainId: chain?.chainId ?? CHAIN_IDS[t.chain] ?? 0 },
+        detectedAt: nowIso(),
+        status: "DETECTED",
+        metadata: {
+          source: "treasury_investigate",
+          treasuryAddressId: t.id,
+          treasuryAddress: t.address,
+          chain: t.chain,
+          ...(activity ? { contractActivity: activity } : {}),
+        },
+      };
+      await createIncident(db, incident, req.params.id, user.id);
+      const investigation = await createInvestigation(db, { incidentId: incident.id });
+      jobs.enqueue(incident, investigation.id);
+      reply.code(202).send(
+        ok({ incidentId: incident.id, investigationId: investigation.id, status: "QUEUED" }),
+      );
     },
   );
 

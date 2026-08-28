@@ -283,6 +283,15 @@ export const aegisApi = {
       { method: "POST" },
     );
   },
+  investigateTreasury(
+    id: string,
+    addressId: string,
+  ): Promise<{ incidentId: string; investigationId: string; status: string }> {
+    return request(
+      `${API_PREFIX}/protocols/${encodeURIComponent(id)}/treasury/${encodeURIComponent(addressId)}/investigate`,
+      { method: "POST" },
+    );
+  },
   listContracts(id: string): Promise<{ items: Contract[] }> {
     return request(`${API_PREFIX}/protocols/${encodeURIComponent(id)}/contracts`);
   },

@@ -31,6 +31,7 @@ import {
 } from "@aegis/agents";
 import { fuseEvidence } from "./fusion.js";
 import { deriveRootCause } from "./root-cause.js";
+import { agentShapeRootCause } from "./agent-root-cause.js";
 
 export interface RunInvestigationOptions {
   /** Live event sink (e.g. SSE). Called for every emitted event. */
@@ -183,7 +184,16 @@ export async function runInvestigation(
         payload: {},
       }),
     );
-    const rootCause = deriveRootCause(incident, findings, unifiedEvidence);
+    const baseRootCause = deriveRootCause(incident, findings, unifiedEvidence);
+    // In harness mode, let aegis-commander shape the final root cause from the
+    // real findings/evidence (deterministic result is the fallback).
+    const { rootCause, shapedByAgent } = await agentShapeRootCause(
+      session,
+      incident,
+      findings,
+      unifiedEvidence,
+      baseRootCause,
+    );
     await store.recordRootCause(rootCause);
     emit(
       makeEvent({
@@ -194,6 +204,7 @@ export async function runInvestigation(
           title: rootCause.title,
           confidence: rootCause.confidence,
           status: rootCause.status,
+          shapedBy: shapedByAgent ? "aegis-commander" : "deterministic",
         },
       }),
     );

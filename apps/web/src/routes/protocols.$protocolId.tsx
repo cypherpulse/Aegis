@@ -16,6 +16,7 @@ import {
   useDeleteTreasury,
   useIntegrationKeys,
   useInvestigateContract,
+  useInvestigateTreasury,
   useMonitoring,
   useProtocol,
   useReportIncident,
@@ -227,9 +228,11 @@ function ContractsTab({ protocolId }: { protocolId: string }) {
 }
 
 function TreasuryTab({ protocolId }: { protocolId: string }) {
+  const navigate = useNavigate();
   const treasury = useTreasury(protocolId);
   const create = useCreateTreasury(protocolId);
   const del = useDeleteTreasury(protocolId);
+  const investigate = useInvestigateTreasury(protocolId);
   const [address, setAddress] = useState("");
   const [chain, setChain] = useState("Ethereum");
   const [label, setLabel] = useState("");
@@ -276,6 +279,23 @@ function TreasuryTab({ protocolId }: { protocolId: string }) {
           primary: t.label || t.address,
           secondary: t.address,
           logo: <ChainBadge value={t.chain} />,
+          action: (
+            <button
+              onClick={() =>
+                investigate.mutate(t.id, {
+                  onSuccess: (res) =>
+                    void navigate({
+                      to: "/incidents/$incidentId",
+                      params: { incidentId: res.incidentId },
+                    }),
+                })
+              }
+              disabled={investigate.isPending}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-accent disabled:opacity-60"
+            >
+              <Play className="size-3" /> Investigate
+            </button>
+          ),
           onDelete: () => del.mutate(t.id),
         }))}
       />
@@ -335,7 +355,7 @@ function IntegrationTab({ protocolId }: { protocolId: string }) {
   const example = `curl -X POST ${endpoint} \\
   -H "x-api-key: <YOUR_KEY>" \\
   -H "content-type: application/json" \\
-  -d '{"title":"Payout failures","description":"Treasury balance low","severity":"CRITICAL","chain":"Base Sepolia"}'`;
+  -d '{"title":"Payout failures","description":"Treasury balance low","severity":"CRITICAL","chain":"Base"}'`;
 
   return (
     <div className="space-y-6">

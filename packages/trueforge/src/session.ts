@@ -102,11 +102,16 @@ export class TrueForgeSession {
    * Server-side tool execution against the tenant's MCP servers is a platform
    * deployment concern; the deterministic tool reads happen in the runner.
    */
-  async narrateTurn(prompt: string): Promise<string | undefined> {
+  async narrateTurn(prompt: string, timeoutMs = 45_000): Promise<string | undefined> {
     if (this.mode !== "harness" || !this.session) return undefined;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15_000);
-    const chunks: string[] = [];
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // The gateway streams assistant text as `model.message.delta` events (the
+    // bare `model.message` carries only metadata), and the final answer is on
+    // `turn.done` → state.output.content. Accumulate the deltas; fall back to
+    // the final output if we saw none.
+    let streamed = "";
+    let final = "";
     try {
       const prepared = this.session.prepareTurn({
         input: [{ type: "user.message", content: prompt }],
@@ -116,23 +121,21 @@ export class TrueForgeSession {
         { abortSignal: controller.signal },
       );
       for await (const { event } of stream) {
-        if (event.type === "model.message") {
-          const text =
-            typeof event.content === "string"
-              ? event.content
-              : event.content != null
-                ? JSON.stringify(event.content)
-                : "";
-          if (text) chunks.push(text);
-        } else if (event.type === "turn.done") {
+        const e = event as { type?: string; content?: unknown; state?: { output?: { content?: unknown } } };
+        if (e.type === "model.message.delta") {
+          if (typeof e.content === "string") streamed += e.content;
+        } else if (e.type === "turn.done") {
+          const out = e.state?.output?.content;
+          if (typeof out === "string") final = out;
           break;
         }
       }
     } catch {
-      // bounded + best-effort; the investigation proceeds via the tool runner
+      // bounded + best-effort; callers fall back to their own summary
     } finally {
       clearTimeout(timer);
     }
-    return chunks.length ? chunks.join("\n") : undefined;
+    const text = (final || streamed).trim();
+    return text || undefined;
   }
 }

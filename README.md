@@ -224,10 +224,19 @@ the container.
 Meaningful changes are reviewed by [Qodo](https://www.qodo.ai/) via pull request
 before merge (direct pushes to `main` are not treated as reviewed work).
 
-- Representative reviewed PR: _<link to be added once the PR is opened/merged>_
-- What Qodo found / what changed: _<1–2 lines summarizing findings addressed or intentionally dismissed>_
+- **Reviewed & merged PR:** [#1 — feat: finalize MCP, deploy, multichain, isolation, agentic assistant](https://github.com/cypherpulse/Aegis/pull/1)
+- **What Qodo found → what changed:** Qodo's automated review flagged four bugs, all
+  fixed in the follow-up commit: (1) the Docker build omitted the root-level
+  `simulator` workspace so `pnpm install --frozen-lockfile` would fail — now the
+  full workspace is copied before install; (2) the `aegis-mcp` bin pointed at a
+  `.ts` file with no launcher — added a `tsx` shebang; (3) the Compose `api`
+  service dropped documented runtime env (`CHAIN_RPC_*`, monitor tuning,
+  `GOOGLE_*`, sandbox) — now forwarded; and (4) a **security** issue where
+  credentialed CORS defaulted to reflecting any origin — production now requires
+  an explicit `CORS_ORIGINS` allowlist.
 
-The PR history shows the automated Qodo review and the follow-up review after fixes.
+The PR thread shows the automated Qodo review and the follow-up `/agentic_review`
+after the fixes were pushed.
 
 ---
 
