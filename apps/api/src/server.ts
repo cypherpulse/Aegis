@@ -58,7 +58,8 @@ async function main(): Promise<void> {
     app.log.info(`Monitor enabled (interval ${intervalMs}ms)`);
   }
 
-  const port = Number(process.env.API_PORT ?? 4000);
+  // Render/Heroku inject PORT and route to it; fall back to API_PORT then 4000.
+  const port = Number(process.env.PORT ?? process.env.API_PORT ?? 4000);
   await app.listen({ port, host: "0.0.0.0" });
   app.log.info(`Aegis API listening on :${port}`);
 
