@@ -40,6 +40,42 @@ export const API_BASE_URL: string =
 
 export const API_PREFIX = "/api/v1";
 
+// ---- Bearer token auth (no cross-site cookies needed) -------------------
+const TOKEN_KEY = "aegis_token";
+
+export function getToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setToken(token: string | null): void {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/**
+ * Capture a `#token=...` fragment (left by the Google OAuth callback), store it,
+ * and clean it out of the URL. Call once on app load.
+ */
+export function captureAuthTokenFromUrl(): void {
+  try {
+    const m = window.location.hash.match(/token=([^&]+)/);
+    if (m?.[1]) {
+      setToken(decodeURIComponent(m[1]));
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export class AegisApiError extends Error {
   readonly code: string;
   readonly status: number;
@@ -77,11 +113,13 @@ function toErrorBody(value: unknown): ApiErrorBody | null {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
+    const token = getToken();
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
-      credentials: "include", // send the session cookie
+      credentials: "include", // still send the cookie for same-origin / local dev
       headers: {
         Accept: "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
         ...(init?.headers ?? {}),
       },
@@ -218,11 +256,13 @@ export const aegisApi = {
       body: JSON.stringify({ address }),
     });
   },
-  walletVerify(address: string, signature: string): Promise<{ user: User }> {
-    return request(`${API_PREFIX}/auth/wallet/verify`, {
+  async walletVerify(address: string, signature: string): Promise<{ user: User }> {
+    const res = await request<{ user: User; token?: string }>(`${API_PREFIX}/auth/wallet/verify`, {
       method: "POST",
       body: JSON.stringify({ address, signature }),
     });
+    if (res.token) setToken(res.token);
+    return { user: res.user };
   },
   me(): Promise<{ user: User | null }> {
     return request(`${API_PREFIX}/auth/me`);
@@ -231,10 +271,13 @@ export const aegisApi = {
     return request(`${API_PREFIX}/auth/config`);
   },
   async logout(): Promise<void> {
+    const token = getToken();
     await fetch(`${API_BASE_URL}${API_PREFIX}/auth/logout`, {
       method: "POST",
       credentials: "include",
-    });
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }).catch(() => undefined);
+    setToken(null);
   },
   googleAuthUrl(): string {
     return `${API_BASE_URL}${API_PREFIX}/auth/google`;

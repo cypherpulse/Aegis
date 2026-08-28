@@ -56,7 +56,12 @@ export async function sessionUser(
   db: Database,
   req: FastifyRequest,
 ): Promise<UserRecord | null> {
-  const sessionId = req.cookies?.[SESSION_COOKIE];
+  // Prefer a Bearer token (works cross-site with no cookies), fall back to the
+  // session cookie so same-origin / local dev keeps working.
+  const auth = req.headers.authorization;
+  const bearer =
+    typeof auth === "string" && auth.startsWith("Bearer ") ? auth.slice(7).trim() : undefined;
+  const sessionId = bearer || req.cookies?.[SESSION_COOKIE];
   if (!sessionId) return null;
   return getSessionUser(db, sessionId);
 }
